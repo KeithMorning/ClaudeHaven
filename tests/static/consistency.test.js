@@ -323,3 +323,90 @@ test('坑 20：page_size 保持 6（万象 7890 是声调键，不是选字键�
   assert.match(s, /page_size: 6/, 'page_size 必须为 6');
   assert.doesNotMatch(s, /page_size: 9/, '改成 9 会让第 7~9 个候选按数字选不中');
 });
+
+// ---------- 一键环境重置（封号后换全新身份） ----------
+
+test('坑 21：重置必须先停会话再销毁磁盘，顺序反了会白清', () => {
+  const s = readRel('claude-desktop/app/main.js');
+  const stopAt = s.indexOf('const stopped = await stopRuntime();');
+  const destroyAt = s.indexOf('const destroyed = await backend.destroyAll(');
+  assert.ok(stopAt > 0 && destroyAt > stopAt,
+    '运行中的 Claude Code 退出时会把内存旧凭证写回 ~/.claude，必须先停再销毁');
+  assert.match(s, /fs\.unlinkSync\(lastStartPath\(\)\)/,
+    '销毁后必须清宿主就绪指纹，否则下次启动误判环境还活着而跳过重建');
+});
+
+test('坑 21：重置按钮必须有显式二次确认', () => {
+  const js = readRel('claude-desktop/app/renderer/renderer.js');
+  assert.match(js, /resetArmed/, '两段式确认状态');
+  assert.match(js, /确认销毁并重建/, '第一次点击只改文案，不直接执行');
+  const html = readRel('claude-desktop/app/renderer/index.html');
+  assert.match(html, /id="reset"/, '界面要有重置入口');
+  const preload = readRel('claude-desktop/app/preload.js');
+  assert.match(preload, /runtime:reset/, 'preload 要暴露重置通道');
+});
+
+// ---------- 模块一：容器内 mihomo + TUN 全局接管（坑 22） ----------
+
+test('坑 22：容器内内核必须在 net-guard 熔断之前启动', () => {
+  const s = readRel('claude-vm/vm/scripts/entrypoint.sh');
+  const tunAt = s.indexOf('/opt/scripts/tun-core.sh &');
+  const guardAt = s.indexOf('/opt/scripts/net-guard.sh &');
+  assert.ok(tunAt > 0 && guardAt > tunAt,
+    '内核要在还有默认路由时解析节点域名、预置 MMDB、补 /32 主机路由；锁完路由就做不了了');
+  assert.match(s, /rm -f \/opt\/config\/local-proxy/,
+    'TUN 模式必须清掉 local-proxy，否则 Chrome 仍带 --proxy-server 形成双层代理');
+});
+
+test('坑 22：GeoIP 数据库必须预置进镜像，且启动前检查', () => {
+  const docker = readRel('claude-vm/vm/Dockerfile');
+  assert.match(docker, /geoip\.metadb/, '预置 MMDB，避免 DNS 指向内核自己时下载死锁');
+  assert.match(docker, /usr\/local\/bin\/mihomo/, '内核随镜像提供');
+  assert.match(docker, /TARGETARCH/, '内核二进制按架构取（rootfs 其余部分仍是 amd64）');
+  const core = readRel('claude-vm/vm/scripts/tun-core.sh');
+  assert.match(core, /geoip\.metadb/, '启动前检查数据库存在，缺了就保持全断网');
+  assert.match(core, /nameserver 127\.0\.0\.1/, 'DNS 必须收进容器内，宿主 fake-ip 才插不进来');
+});
+
+test('坑 22：net-guard 的 TUN 分支必须用裸 curl，不能残留显式 -x', () => {
+  const s = readRel('claude-vm/vm/scripts/net-guard.sh');
+  assert.match(s, /TUN_MODE="\$\{TUN_MODE:-0\}"/, 'TUN 模式开关');
+  assert.match(s, /if \[ -n "\$PROXY_URL" \]; then wpx=\(-x "\$PROXY_URL"\); fi/,
+    '看门狗按 PROXY_URL 是否存在决定加不加 -x；TUN 模式下为空 = 裸 curl');
+  assert.ok(!s.includes('-x "$PROXY_URL" http://cp.cloudflare.com'),
+    '硬编码 -x 会去测一个不存在的代理端口，是 1.0.36 前的假绿来源');
+  assert.match(s, /pgrep -x mihomo/, '内核或 TUN 网卡消失必须判失败');
+  assert.ok(s.includes('LOCK_ARG="http://127.0.0.1:1"'), '占位 lock 保留 fail-closed 底座');
+});
+
+test('坑 22：Clash YAML 用 base64 分块注入，不把原文拼进 shell', () => {
+  const s = readRel('claude-desktop/app/main.js');
+  assert.match(s, /toString\('base64'\)/, 'YAML 内容编码后再传');
+  assert.match(s, /const CHUNK = 8000/, '分块：Windows execFile 命令行上限 32767 字符');
+  assert.match(s, /printf '%s' '\$\{part\}'/, '块内只含 A-Za-z0-9+/=，单引号安全');
+  assert.match(s, /TUN_MODE: tunMode \? '1' : '0'/, '把开关传进客机');
+});
+
+test('坑 22：界面开关、外部 YAML 选择与配置指纹接线齐全', () => {
+  const html = readRel('claude-desktop/app/renderer/index.html');
+  assert.match(html, /id="tunMode"/, 'TUN 开关');
+  assert.match(html, /id="clashYamlPath"/, '外部 YAML 路径');
+  const js = readRel('claude-desktop/app/renderer/renderer.js');
+  assert.match(js, /pickClashYaml/, '选择文件通道');
+  const pre = readRel('claude-desktop/app/preload.js');
+  assert.match(pre, /clash:pick/, 'preload 暴露');
+  const main = readRel('claude-desktop/app/main.js');
+  assert.ok(main.includes('tunConfig.tunFingerprint(r.text)'),
+    '外部改了 YAML 必须换指纹，否则会接管旧配置的内核');
+  assert.ok(main.includes("ipcMain.handle('clash:pick'"), '主进程选择文件处理器');
+});
+
+test('坑 22：TUN 就绪必须等显式 ready 标记，不能只看网卡出现', () => {
+  const core = readRel('claude-vm/vm/scripts/tun-core.sh');
+  const dnsAt = core.indexOf("printf 'nameserver 127.0.0.1\\n' > /etc/resolv.conf");
+  const markAt = core.indexOf('echo ready > "$READY_FILE"');
+  assert.ok(dnsAt > 0 && markAt > dnsAt,
+    '网卡先于 DNS 切换出现；只等 Meta 会让 getent 问到 WSL 的 DNS 代理（宿主 fake-ip）');
+  const ep = readRel('claude-vm/vm/scripts/entrypoint.sh');
+  assert.ok(ep.includes('/run/claude-vm/tun-ready'), 'entrypoint 要等 ready 标记再进入熔断');
+});

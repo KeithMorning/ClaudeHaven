@@ -26,6 +26,9 @@ build/slimtest/
 build/ime-*-out.txt
 build/shots/
 
+# TUN spike / 产品链路验证的输出（脚本本身入库）
+build/tun-*-out.txt
+
 # WSL 发行版导出
 slim*.tar.gz
 
@@ -38,3 +41,7 @@ claude-desktop/build/*
 
 # 工作区记忆与本地会话数据
 .workbuddy/
+
+# Python 编译产物
+__pycache__/
+*.pyc

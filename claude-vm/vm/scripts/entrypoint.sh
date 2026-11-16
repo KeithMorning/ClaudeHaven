@@ -68,6 +68,41 @@ case "$PROXY_MODE" in
   *) PROXY_MODE="all" ;;
 esac
 
+# 2.1) TUN 模式：容器内自带代理内核（mihomo），宿主 Clash 只是「导入/编辑 YAML」
+#      的辅助工具，运行时链路里没有它 —— 宿主切 Global 还是 Direct 与本环境无关。
+#      必须在 net-guard 熔断**之前**启动：内核要在还有默认路由时解析节点域名、
+#      预置 GeoIP、补 /32 主机路由；默认路由一删，这些就都做不了了。
+#      实测结论见 build/TUN-SPIKE-结果.md（第四轮 tun-builtin-spike.sh 全绿）。
+TUN_MODE="${TUN_MODE:-0}"
+export TUN_MODE
+if [ "$TUN_MODE" = "1" ]; then
+  if [ -s /opt/config/clash.yaml ] && [ -x /opt/scripts/tun-core.sh ]; then
+    /opt/scripts/tun-core.sh &
+    TUN_CORE_PID=$!
+    echo "[claude-vm] TUN 模式：容器内代理内核启动中（pid=$TUN_CORE_PID）"
+    # 等「DNS 已切进内核」的显式标记再进入熔断，最多 15 秒。
+    # 只看 Meta 网卡不够：网卡先于 resolv.conf 切换出现，那个窗口里
+    # getent 仍会问到 WSL 的 DNS 代理（宿主 fake-ip 198.18.x）。
+    for _ in $(seq 1 30); do
+      [ "$(cat /run/claude-vm/tun-ready 2>/dev/null)" = "ready" ] && break
+      sleep 0.5
+    done
+    if [ "$(cat /run/claude-vm/tun-ready 2>/dev/null)" != "ready" ]; then
+      echo "[claude-vm] 严重：TUN 未就绪，net-guard 将保持全断网（fail-closed）"
+    fi
+    # 应用侧不再设任何显式代理：流量由 TUN 在网络层接管。
+    # 同时清掉 local-proxy，Chrome 的 --proxy-server 也会跟着消失，避免双层代理。
+    EFFECTIVE_UP=""
+    unset HTTP_PROXY HTTPS_PROXY http_proxy https_proxy ALL_PROXY all_proxy
+    rm -f /opt/config/local-proxy
+  else
+    echo "[claude-vm] 严重：已开启 TUN 模式但缺少 clash.yaml / tun-core.sh，网络保持全断网"
+    EFFECTIVE_UP=""
+    TUN_MODE=0
+    rm -f /opt/config/local-proxy
+  fi
+fi
+
 if [ -n "$EFFECTIVE_UP" ]; then
   export UPSTREAM_PROXY="$EFFECTIVE_UP"
   export PROXY_MODE

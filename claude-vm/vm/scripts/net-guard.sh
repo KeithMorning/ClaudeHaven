@@ -48,6 +48,14 @@ PROXY_URL="$(cat /opt/config/local-proxy 2>/dev/null | tr -d '\r\n')"
 [ -n "$PROXY_URL" ] || PROXY_URL="${HTTPS_PROXY:-${HTTP_PROXY:-}}"
 PROXY_URL="${PROXY_URL%/}"
 
+# TUN 模式（容器内自带 mihomo）：应用不再显式走代理端口，流量在网络层被 TUN
+# 接管。预检和看门狗都必须用**裸 curl** 才测得到真实链路；这里清空 PROXY_URL
+# 让下面所有 px=(-x ...) 自动失效。别在这里填 127.0.0.1:7890 —— 那是旧链路。
+TUN_MODE="${TUN_MODE:-0}"
+if [ "$TUN_MODE" = "1" ]; then
+  PROXY_URL=""
+fi
+
 log() { echo "$LOG_PREFIX $*"; }
 
 # 原子写状态：先写 tmp 再 mv。读的一方（自检/界面）永远不会读到半截文件。
@@ -104,7 +112,12 @@ trap 'rm -f "$PIDFILE"' EXIT INT TERM
 #     这正对应用户第 2 个诉求：代理没配好，宁可没网，也不能裸奔。
 # ------------------------------------------------------------
 NO_PROXY_CFG=0
-if [ -z "$PROXY_URL" ]; then
+if [ "$TUN_MODE" = "1" ]; then
+  # 出口由容器内内核决定，没有「代理 URL」可填；占位地址让 lock 只做
+  # 「删默认路由 + 关 IPv6」，这条锁正是 TUN 挂掉后全断网的依据。
+  LOCK_ARG="http://127.0.0.1:1"
+  log "TUN 模式：容器内内核接管出口，路由熔断保留作 fail-closed 底座"
+elif [ -z "$PROXY_URL" ]; then
   NO_PROXY_CFG=1
   LOCK_ARG="http://127.0.0.1:1"
   log "未配置代理：仍将封锁全部直连（fail-closed）"
@@ -191,10 +204,25 @@ PY
   DIRECT_LEAK="${INFO[6]:-unknown}"
   rm -rf "$T"
 
+  # TUN 模式下 `--noproxy '*'` 只是不让 curl 用应用层代理，包照样会被 TUN
+  # 抓走，所以「直连探测能通」在这里**不代表泄漏**。改验真正的前提：
+  # 容器内内核活着 + Meta 网卡存在；两者缺一即判失败，保持 blocked。
+  if [ "$TUN_MODE" = "1" ]; then
+    if pgrep -x mihomo >/dev/null 2>&1 && grep -qE '^ *Meta:' /proc/net/dev 2>/dev/null; then
+      DIRECT_LEAK=no
+    else
+      DIRECT_LEAK=yes
+    fi
+  fi
+
   # 判定按严重度从高到低，第一个命中即返回
   if [ "$DIRECT_LEAK" = "yes" ]; then
     PF_REASON=leak-detected
-    PF_MSG="熔断后直连仍能出网，网络层封锁失效，已拒绝放行。请检查虚拟环境是否以 root 运行、CAP_NET_ADMIN 是否被禁用。"
+    if [ "$TUN_MODE" = "1" ]; then
+      PF_MSG="容器内代理内核或 TUN 网卡不存在，出口未被接管，已拒绝放行。请查看 /run/claude-vm/tun-core.log。"
+    else
+      PF_MSG="熔断后直连仍能出网，网络层封锁失效，已拒绝放行。请检查虚拟环境是否以 root 运行、CAP_NET_ADMIN 是否被禁用。"
+    fi
     return 1
   fi
   if [ "$LOCKED" != "1" ]; then
@@ -202,7 +230,7 @@ PY
     PF_MSG="网络熔断未生效，已拒绝放行。"
     return 1
   fi
-  if [ "$NO_PROXY_CFG" = "1" ]; then
+  if [ "$NO_PROXY_CFG" = "1" ] && [ "$TUN_MODE" != "1" ]; then
     PF_REASON=no-proxy
     PF_MSG="未配置代理，网络已被完全切断。请在设置里填好代理地址（并确认代理软件已开启「允许局域网连接」）后重新启动。"
     return 1
@@ -235,7 +263,11 @@ PY
     return 1
   fi
   PF_REASON=ok
-  PF_MSG="网络已锁定：仅允许经代理出网，代理断开即断网，不会回落到本机直连。出口 ${EXIT_IP}${EXIT_COUNTRY:+ · $EXIT_COUNTRY}${EXIT_CITY:+ · $EXIT_CITY}。"
+  if [ "$TUN_MODE" = "1" ]; then
+    PF_MSG="网络已锁定：容器内代理内核经 TUN 接管全部流量，内核退出即断网，宿主代理软件的模式与本机无关。出口 ${EXIT_IP}${EXIT_COUNTRY:+ · $EXIT_COUNTRY}${EXIT_CITY:+ · $EXIT_CITY}。"
+  else
+    PF_MSG="网络已锁定：仅允许经代理出网，代理断开即断网，不会回落到本机直连。出口 ${EXIT_IP}${EXIT_COUNTRY:+ · $EXIT_COUNTRY}${EXIT_CITY:+ · $EXIT_CITY}。"
+  fi
   return 0
 }
 
@@ -258,7 +290,7 @@ fi
   echo "exit_org=${EXIT_ORG:-}"
   echo "exit_city=${EXIT_CITY:-}"
   echo "mode=${PROXY_MODE:-all}"
-  echo "upstream=${PROXY_URL}"
+  if [ "$TUN_MODE" = "1" ]; then echo "upstream=tun://Meta"; else echo "upstream=${PROXY_URL}"; fi
 } > "$GUARD_DIR/exit.state"
 
 [ "$MODE" = "once" ] && exit "$PF"
@@ -275,14 +307,23 @@ while sleep "$INTERVAL"; do
   R="$(python3 "$PY" lock "${LOCK_ARG}" 2>&1)"
   if printf '%s' "$R" | grep -q '"locked": *true'; then LOCKED=1; else LOCKED=0; fi
 
-  if [ -z "$PROXY_URL" ]; then
+  if [ -z "$PROXY_URL" ] && [ "$TUN_MODE" != "1" ]; then
     # 没代理就没有可探活的链路，保持 blocked
     write_state blocked no-proxy "未配置代理，网络保持完全切断。"
     continue
   fi
 
+  # TUN 模式下 PROXY_URL 为空：裸 curl 的流量本来就会进 TUN，
+  # 这才是真实链路；加 -x 反而测的是不存在的代理端口（1.0.36 前的假绿来源）。
+  wpx=()
+  if [ -n "$PROXY_URL" ]; then wpx=(-x "$PROXY_URL"); fi
   CODE="$(curl -s -o /dev/null -w '%{http_code}' --connect-timeout 2 --max-time 6 \
-          -x "$PROXY_URL" http://cp.cloudflare.com/generate_204 2>/dev/null)"
+          "${wpx[@]}" http://cp.cloudflare.com/generate_204 2>/dev/null)"
+  # 内核或 TUN 网卡消失时，即使 204 还能通（例如宿主网关侧接管），也必须判失败。
+  if [ "$TUN_MODE" = "1" ] \
+     && { ! pgrep -x mihomo >/dev/null 2>&1 || ! grep -qE '^ *Meta:' /proc/net/dev 2>/dev/null; }; then
+    CODE=000
+  fi
   if [ "$CODE" = "204" ] || [ "$CODE" = "200" ]; then
     CONSEC_FAIL=0
     if [ "$PREFLIGHT" != "pass" ] || [ "$(sed -n 's/^state=//p' "$STATE" 2>/dev/null)" != "guarded" ]; then

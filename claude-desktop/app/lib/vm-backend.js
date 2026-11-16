@@ -185,6 +185,35 @@ function createWslBackend() {
       await wsl(['--terminate', DISTRO]);
     },
 
+    // 一键重置：销毁发行版磁盘（ext4.vhdx），hostname / machine-id / ~/.claude /
+    // Chrome profile / 登录态全部随磁盘一起消失，下次 --import 从 rootfs 重新生成。
+    // 与 stopAll 的区别是刻意的：--terminate 只停机、保数据；--unregister 才真正换身份。
+    async destroyAll(opts = {}) {
+      const r = await wsl(['--unregister', DISTRO]);
+      if (!r.ok) {
+        const detail = String(r.stderr || r.stdout || '').replace(/\0/g, '').trim();
+        // 未注册不算失败：重置的目标就是「最终不存在」
+        if (!/not (found|registered)|没有|不存在|0x80370112/i.test(detail)) {
+          return { ok: false, error: `销毁发行版失败：${detail.slice(0, 300)}` };
+        }
+      }
+      // --unregister 通常连安装目录一起删；但残留会让下次 wsl --import 报
+      // 「目录已存在/非空」而重建失败。只清理本应用自己的 runtime 目录里
+      // 属于该发行版的磁盘文件，绝不递归删用户目录。
+      if (opts.dataDir) {
+        const fs = require('fs');
+        const p = require('path');
+        try {
+          for (const name of fs.readdirSync(opts.dataDir)) {
+            if (/^(ext4\.vhdx|.*\.vhdx)$/i.test(name)) {
+              fs.unlinkSync(p.join(opts.dataDir, name));
+            }
+          }
+        } catch { /* 目录不存在即最干净的状态 */ }
+      }
+      return { ok: true };
+    },
+
     async diagInfo() {
       const r = await wsl(['-l', '-v'], { timeout: 20000 });
       return String(r.stdout || r.stderr || '').replace(/\0/g, '').trim();
@@ -366,6 +395,23 @@ function createContainerBackend() {
       const c = cliCache || 'docker';
       // -t 8：给 entrypoint 收尾留时间；容器与 /root 卷保留（对齐 wsl --terminate 语义）
       await execFileP(c, ['stop', '-t', '8', CONTAINER], { timeout: 30000 });
+    },
+
+    // 一键重置：删容器 + 删 /root 命名卷。卷里装着 ~/.claude、Chrome profile、
+    // Rime 词库与所有登录态；不删卷就等于没换身份，封号后会被连坐。
+    // 镜像（IMAGE）保留 —— 它是只读模板，不含任何用户身份，重建时直接复用。
+    async destroyAll() {
+      const c = await cli();
+      if (!c) return { ok: false, error: HELP };
+      const rmC = await execFileP(c, ['rm', '-f', CONTAINER], { timeout: 60000 });
+      if (!rmC.ok && !/No such container/i.test(String(rmC.stderr || ''))) {
+        return { ok: false, error: `删除容器失败：${String(rmC.stderr || rmC.stdout).trim().slice(0, 300)}` };
+      }
+      const rmV = await execFileP(c, ['volume', 'rm', '-f', HOME_VOLUME], { timeout: 60000 });
+      if (!rmV.ok && !/No such volume/i.test(String(rmV.stderr || ''))) {
+        return { ok: false, error: `删除 /root 持久卷失败：${String(rmV.stderr || rmV.stdout).trim().slice(0, 300)}` };
+      }
+      return { ok: true };
     },
 
     async diagInfo() {

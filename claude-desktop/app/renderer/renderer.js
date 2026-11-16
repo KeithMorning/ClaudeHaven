@@ -39,6 +39,9 @@ function gather() {
     lang: r.lang,
     proxy: $('proxy').value.trim(),
     proxyMode: $('proxyMode').value,
+    // 模块一：容器内 mihomo + TUN。开启后上面的本机代理端口退居为「配置辅助」。
+    tunMode: $('tunMode').value === 'on',
+    clashYamlPath: $('clashYamlPath').value.trim(),
     whitelist: $('whitelist').value.trim(),
     workspace: $('workspace').value.trim(),
     displayMode: $('displayMode').value === 'desktop' ? 'desktop' : 'wslg',
@@ -53,10 +56,30 @@ function syncProxyMode() {
   $('wlBox').hidden = $('proxyMode').value !== 'whitelist';
 }
 
+// TUN 模式下出口由容器内内核决定，旧链路的代理端口不再是运行时依赖。
+// 这里只做灰显与提示，不清空值 —— 用户切回来时配置还在。
+function syncTunMode() {
+  const on = $('tunMode').value === 'on';
+  $('tunBox').hidden = !on;
+  $('proxy').disabled = on;
+  $('proxyDetect').disabled = on;
+  $('proxyMode').disabled = on;
+  const p = $('clashYamlPath').value.trim();
+  if (on && !p) {
+    $('tunHint').textContent = '请先选择 Clash YAML 文件，否则启动会被拒绝（未配置出口时不放行网络）。';
+  } else if (on) {
+    $('tunHint').textContent = '出口由虚拟机内核决定；上面的本机代理端口不再参与运行时链路。';
+  } else {
+    $('tunHint').textContent = '当前走旧链路：应用显式经本机代理端口出网。';
+  }
+}
+
 function fill(c) {
   $('region').value = c.region || 'us-east';
   $('proxy').value = c.proxy || '';
   $('proxyMode').value = c.proxyMode === 'whitelist' ? 'whitelist' : 'all';
+  $('tunMode').value = c.tunMode ? 'on' : 'off';
+  $('clashYamlPath').value = c.clashYamlPath || '';
   $('whitelist').value = c.whitelist || '.anthropic.com,.claude.com,.claude.ai,.claudeusercontent.com,clau.de';
   $('workspace').value = c.workspace || '';
   $('displayMode').value = c.displayMode === 'desktop' ? 'desktop' : 'wslg';
@@ -70,6 +93,7 @@ function fill(c) {
     sel.disabled = true;
   }
   syncProxyMode();
+  syncTunMode();
   syncDisplayMode();
 }
 
@@ -574,6 +598,76 @@ async function doStop() {
   $('stop').disabled = true;
 }
 
+// ---------- 一键环境重置 ----------
+// 破坏性操作：用两段式按钮确认，不弹系统模态框（Electron 某些版本里会被阻塞）。
+// 第一次点击只改文案并计时，10 秒内再点才真正执行；超时自动复原。
+let resetArmed = 0;
+async function doReset() {
+  const btn = $('reset');
+  if (Date.now() > resetArmed) {
+    resetArmed = Date.now() + 10000;
+    btn.textContent = '确认销毁并重建？再点一次';
+    btn.classList.add('armed');
+    setTimeout(() => {
+      if (Date.now() > resetArmed) { btn.textContent = '一键重置环境'; btn.classList.remove('armed'); }
+    }, 10500);
+    return;
+  }
+  resetArmed = 0;
+  btn.textContent = '正在重置…';
+  btn.disabled = true;
+  $('start').disabled = true;
+  $('stop').disabled = true;
+  stopClipboardBridge();
+  setStatus('正在销毁旧环境并生成新环境…', 'busy');
+  clearGuard();
+  clearEgress();
+  $('view').hidden = true;
+  $('view').src = 'about:blank';
+  $('wslgPanel').hidden = true;
+  $('placeholder').hidden = false;
+
+  let r;
+  try { r = await window.api.reset(gather()); }
+  catch (e) { r = { ok: false, error: String(e && e.message || e) }; }
+
+  btn.disabled = false;
+  btn.classList.remove('armed');
+  btn.textContent = '一键重置环境';
+  if (r && r.ok) {
+    // 复用 doStart 的渲染分支（它会处理 wslg / desktop 两套画面）
+    cfg = gather();
+    $('placeholder').hidden = true;
+    const wslg = r.displayMode !== 'desktop';
+    const v = $('view');
+    if (wslg) { v.hidden = true; $('wslgPanel').hidden = false; refreshAuth(); }
+    else {
+      $('wslgPanel').hidden = true;
+      v.hidden = false;
+      v.addEventListener('dom-ready', () => { try { v.focus(); } catch {} }, { once: true });
+      v.src = novncUrl(r.host);
+      wireStageFocus();
+      startClipboardBridge();
+    }
+    $('stop').disabled = false;
+    const lines = [...(r.notes || []), ...(r.warnings || [])];
+    if (lines.length) showChip(lines.join('  '), (r.warnings || []).length ? 'err' : 'ok');
+    showEgress(r.exit);
+    showGuard(r.guard);
+    setStatus('新环境已就绪', 'ok');
+  } else {
+    setStatus('重置失败', 'err');
+    showChip('重置失败，点击查看原因', 'err');
+    openPanel();
+    resetPanel('环境重置未完成');
+    $('cpVerdict').className = 'cp-verdict err';
+    $('cpVerdict').textContent = '需要处理';
+    panelMessage((r && r.error) || '未知错误', true);
+    $('cpRawToggle').disabled = true;
+    $('start').disabled = false;
+  }
+}
+
 // ---------- 初始化 ----------
 // 没有 preload 注入的 api 时（预览/截图用）跳过自动初始化，只暴露渲染函数
 if (!window.api) {
@@ -591,6 +685,26 @@ if (!window.api) {
   $('proxyMode').addEventListener('change', () => {
     syncProxyMode();
     cfg = gather(); window.api.saveConfig(cfg);
+  });
+
+  // 容器内内核：开关 + 选择外部 YAML（用户继续用自己的工具改配置）
+  $('tunMode').addEventListener('change', () => {
+    syncTunMode();
+    cfg = gather(); window.api.saveConfig(cfg);
+  });
+  $('clashYamlPath').addEventListener('change', () => {
+    syncTunMode();
+    cfg = gather(); window.api.saveConfig(cfg);
+  });
+  $('pickClash').addEventListener('click', async () => {
+    const r = await window.api.pickClashYaml();
+    if (!r || r.canceled) return;
+    if (!r.ok) { $('tunHint').textContent = r.error || '选择失败'; return; }
+    $('clashYamlPath').value = r.path;
+    cfg = gather(); window.api.saveConfig(cfg);
+    syncTunMode();
+    const w = (r.warnings && r.warnings.length) ? `（${r.warnings.join('；')}）` : '';
+    $('tunHint').textContent = `已载入 ${r.hosts} 个节点${w}；启动时自动读取最新内容。`;
   });
 
   // 自动检测本机代理：把「不知道填什么端口」这件事彻底消掉。
@@ -657,6 +771,7 @@ if (!window.api) {
 
   $('start').addEventListener('click', doStart);
   $('stop').addEventListener('click', doStop);
+  $('reset').addEventListener('click', doReset);
 
   $('displayMode').addEventListener('change', () => {
     syncDisplayMode();

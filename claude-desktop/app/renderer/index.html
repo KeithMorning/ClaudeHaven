@@ -63,6 +63,29 @@
       </div>
 
       <div class="field">
+        <label>容器内代理内核（TUN 全局接管）</label>
+        <select id="tunMode">
+          <option value="off">关闭 · 用上面的本机代理端口（旧链路）</option>
+          <option value="on">开启 · 导入 Clash YAML，由虚拟机内核自己出网</option>
+        </select>
+        <div class="row" id="tunBox" hidden>
+          <input id="clashYamlPath" type="text" placeholder="选择 Clash / Mihomo 的 .yaml 配置" spellcheck="false" />
+          <button id="pickClash" class="btn ghost" title="可以直接选 Clash Verge 配置目录里的 YAML">选择 YAML…</button>
+        </div>
+        <div class="hint" id="tunHint"></div>
+        <details class="hint-details">
+          <summary>说明</summary>
+          <div class="hint">
+            开启后，mihomo 内核随镜像运行在虚拟机内部，用 TUN 虚拟网卡接管全部流量（含 DNS / UDP / IPv6）。
+            <b>宿主的 Clash 只是用来编辑和导入配置的辅助工具</b>——它是全局还是直连、甚至关掉，都不影响虚拟机出口。
+            每次启动会重新读取你选的 YAML，改完外部配置点一次「停止 → 启动」即可。
+            内核退出时 TUN 与策略路由一起消失，而默认路由已被熔断，网络立刻全断（fail-closed）。
+            节点凭据只写在虚拟机内 <code>/opt/config/mihomo.yaml</code>（600 root:root），不落在共享工作区。
+          </div>
+        </details>
+      </div>
+
+      <div class="field">
         <label>网络熔断（代理断开即断网）</label>
         <select id="netGuard">
           <option value="strict">严格 · 只允许经代理出网（推荐）</option>
@@ -142,6 +165,10 @@
       <div class="check-block row">
         <button id="diag" class="btn ghost" title="把配置、自检结果和最近的运行日志打包成一个文件，出问题时发给开发者">导出诊断包</button>
         <button id="diagOpen" class="link" title="打开日志目录">日志</button>
+      </div>
+
+      <div class="check-block row">
+        <button id="reset" class="btn ghost btn-reset" title="销毁当前虚拟环境并生成一个全新环境（封号后换身份用）">一键重置环境</button>
       </div>
 
       <div class="foot">本地 WSL 运行时 · 无 Docker 依赖</div>

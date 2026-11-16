@@ -11,6 +11,7 @@ const { execFile, spawn } = require('child_process');
 // 注意：必须取 getBackend() 的**实例** —— 方法（runGuest/ensureImage/…）挂在实例上，
 // 只 require 模块拿到的是导出表，调用会直接 TypeError（1.0.32 就是这么把启动搞挂的）。
 const backend = require('./lib/vm-backend').getBackend();
+const tunConfig = require('./lib/tun-config');
 
 const DISTRO = 'claude-vm';
 const NOVNC_PORT = 6080;
@@ -19,7 +20,7 @@ const VNC_PASS = 'claudevm';
 // 运行时脚本 / 界面资源有变更时 +1。它进配置指纹，保证升级后第一次点「启动」
 // 不会去「接管」一个由旧脚本拉起的会话 —— 那些会话里的 openbox、entrypoint、
 // 字体、代理规则全是旧版的，接管等于永远不生效。
-const RUNTIME_REV = 10;
+const RUNTIME_REV = 11;
 // 白名单：从 claude CLI 二进制里实际提取到的运行期域名
 // （code.claude.com / platform.claude.com 是 OAuth 登录与 API key 控制台，
 //   漏掉会让登录流量走直连，与 API 出口形成「两个国家」的矛盾信号）
@@ -162,6 +163,11 @@ function defaultConfig() {
     // all      —— 全部流量交给用户自己的代理，由它按自己的规则分流（默认）
     // whitelist —— 只有白名单域名走代理，其余直连
     proxyMode: 'all',
+    // 模块一：容器内自带 mihomo 内核 + TUN 全局接管（与上面的显式代理链路并存）。
+    // 开启后宿主 Clash 只是配置来源/辅助编辑工具，运行时不再依赖它的端口。
+    tunMode: false,
+    // 指向用户外部工具（Clash Verge 等）正在编辑的那份 YAML；每次启动读最新内容。
+    clashYamlPath: '',
     whitelist: DEFAULT_WHITELIST,
     workspace: path.join(app.getPath('home'), 'claude-workspace'),
     // wslg    —— 默认。Linux 应用是 Windows 原生窗口，日常只在终端里跑 Claude Code。
@@ -614,11 +620,19 @@ async function runtimeAlive(displayMode = 'desktop') {
 // 影响运行时行为的配置项。改了任意一项都必须重建，没改就有资格接管。
 // displayMode 必须算进来：切换显示模式要换整套后端，不能直接接管。
 function cfgFingerprint(cfg) {
+  // TUN 模式下 YAML 内容也进指纹：用户在外部工具里改了订阅/节点，
+  // 下次点「启动」必须重建会话，不能「接管」还在用旧配置的内核。
+  let tun = 'off';
+  if (cfg.tunMode) {
+    const r = tunConfig.readClashYaml(cfg, userDir());
+    tun = r.ok ? `on:${tunConfig.tunFingerprint(r.text)}` : 'on:invalid';
+  }
   return JSON.stringify({
     tz: cfg.tz || '',
     lang: cfg.lang || '',
     proxy: (cfg.proxy || '').trim(),
     mode: cfg.proxyMode || 'all',
+    tun,
     wl: cfg.whitelist || '',
     ws: cfg.workspace || '',
     dm: cfg.displayMode === 'desktop' ? 'desktop' : 'wslg',
@@ -716,6 +730,43 @@ async function startRuntime(cfg, onProgress) {
   onProgress && onProgress('同步运行时脚本…');
   const sync = await syncScripts();
 
+  // 模块一：把用户外部维护的 Clash YAML 注入客机，交给容器内的 mihomo 内核。
+  // 用 base64 分块写入：Windows execFile 命令行上限 32767 字符，而订阅 YAML
+  // 动辄 100KB+；且 YAML 里的引号/$/反斜杠会把 `bash -c` 拼坏（1.0.30 踩过）。
+  // 每块只含 A-Za-z0-9+/=，单引号内绝对安全。
+  let tunMode = false;
+  if (cfg.tunMode) {
+    const y = tunConfig.readClashYaml(cfg, userDir());
+    if (!y.ok) return { ok: false, error: `TUN 模式启动失败：${y.error}` };
+    tunConfig.cacheClashYaml(y.text, userDir());
+    const b64 = Buffer.from(y.text, 'utf8').toString('base64');
+    const CHUNK = 8000;
+    const prep = await runWsl(['bash', '-c',
+      'mkdir -p /opt/config && rm -f /opt/config/clash.yaml /opt/config/mihomo.yaml'], { timeout: 15000 });
+    if (!prep.ok) return { ok: false, error: '无法准备虚拟环境配置目录，已中止启动。' };
+    for (let i = 0; i < b64.length; i += CHUNK) {
+      const part = b64.slice(i, i + CHUNK);
+      const r = await runWsl(['bash', '-c', `printf '%s' '${part}' >> /opt/config/clash.yaml`],
+        { timeout: 15000 });
+      if (!r.ok) return { ok: false, error: '写入 Clash 配置中断，已中止启动（不会放行未受保护的网络）。' };
+    }
+    const fin = await runWsl(['bash', '-c',
+      'base64 -d /opt/config/clash.yaml > /opt/config/.clash.dec && ' +
+      'mv -f /opt/config/.clash.dec /opt/config/clash.yaml && ' +
+      'chmod 600 /opt/config/clash.yaml && echo TUN_YAML_OK'], { timeout: 15000 });
+    if (!/TUN_YAML_OK/.test(fin.stdout || '')) {
+      return { ok: false, error: 'Clash 配置解码失败，已中止启动。请确认 YAML 是 UTF-8 文本。' };
+    }
+    tunMode = true;
+    onProgress && onProgress(
+      `已注入容器内内核配置（${y.validation.hosts.length} 个节点 · 来源 ${y.source}）`);
+  } else {
+    // 关掉 TUN 时清掉客机里的旧配置和节点凭据，避免下次误开成「用旧配置的内核」
+    await runWsl(['bash', '-c',
+      'rm -f /opt/config/clash.yaml /opt/config/mihomo.yaml /opt/config/local-proxy'],
+    { timeout: 12000 }).catch(() => {});
+  }
+
   const ws = cfg.workspace || defaultConfig().workspace;
   try { fs.mkdirSync(ws, { recursive: true }); } catch {}
 
@@ -771,6 +822,7 @@ async function startRuntime(cfg, onProgress) {
     DISPLAY_MODE: displayMode,
     UPSTREAM_PROXY: upstream,
     PROXY_MODE: proxyMode,
+    TUN_MODE: tunMode ? '1' : '0',
     PROXY_WHITELIST: cfg.whitelist || DEFAULT_WHITELIST,
     NET_GUARD: cfg.netGuard === 'off' ? 'off' : 'strict',
     NET_GUARD_STRICT_REGION: cfg.netGuardStrictRegion === false ? '0' : '1',
@@ -983,6 +1035,34 @@ async function stopRuntime() {
   return { ok: true };
 }
 
+// 一键环境重置：封号后生成一个与旧环境零关联的新环境。
+//
+// 顺序是硬性的，别调换：
+//   [0] 先 stopRuntime —— 它 kill 掉 entrypoint/桌面/终端，再 terminate 实例。
+//       必须让客机进程全部退出，再销毁磁盘。若反过来，正在登录的 Claude Code
+//       会在进程退出时把内存里的旧账号凭证写回 ~/.claude / ~/.claude.json，
+//       等于白清（PDF 第七章「绝不能让登录中的 Claude Code 清理它自己」）。
+//   [1] backend.destroyAll —— WSL 用 --unregister 删掉 ext4.vhdx，容器删掉
+//       实例 + /root 命名卷。identity / machine-id / Chrome profile / 登录态
+//       全部随磁盘消失；stopAll 的 --terminate / docker stop 只停机保数据，不够。
+//   [2] 清宿主侧的就绪指纹，避免下次启动误判「环境还活着」而跳过重建。
+//   [3] 由调用方决定是否立即 startRuntime —— 重建会从 rootfs 重新生成身份。
+// 保留的是：干净的静态出口 IP、YAML 代理配置、工作区目录（它们不含身份）。
+async function resetRuntime() {
+  log('reset', '用户触发一键环境重置');
+  const stopped = await stopRuntime();
+  if (stopped && stopped.ok === false) return stopped;
+
+  const destroyed = await backend.destroyAll({ dataDir: dataDir() });
+  if (!destroyed.ok) {
+    log('reset', `销毁失败：${destroyed.error}`);
+    return { ok: false, error: destroyed.error };
+  }
+  try { fs.unlinkSync(lastStartPath()); } catch {}
+  log('reset', '旧环境已销毁：身份、设备 ID、登录态、Chrome profile 全部清除');
+  return { ok: true, reset: true };
+}
+
 // 自检：优先取结构化 JSON（界面按维度渲染），失败则回退到纯文本
 async function checkEnv() {
   if (!(await distroExists())) {
@@ -1086,6 +1166,35 @@ ipcMain.handle('config:get', () => {
 ipcMain.handle('config:save', (_e, cfg) => { saveConfig(cfg); return { ok: true }; });
 ipcMain.handle('proxy:detect', async () => detectProxy());
 
+// 选择外部 Clash/Mihomo YAML：用户继续用自己的工具编辑订阅，这里只读不改写。
+// 选中即缓存一份到 userData，外部文件被移动/删除时仍能启动。
+ipcMain.handle('clash:pick', async () => {
+  let r;
+  try {
+    r = await dialog.showOpenDialog({
+      title: '选择 Clash / Mihomo YAML 配置',
+      properties: ['openFile'],
+      filters: [
+        { name: 'Clash YAML', extensions: ['yaml', 'yml'] },
+        { name: '所有文件', extensions: ['*'] },
+      ],
+    });
+  } catch (e) {
+    return { ok: false, error: String(e && e.message || e) };
+  }
+  if (!r || r.canceled || !r.filePaths || !r.filePaths[0]) return { ok: false, canceled: true };
+  const p = r.filePaths[0];
+  try {
+    const text = fs.readFileSync(p, 'utf8');
+    const v = tunConfig.validateClashYaml(text);
+    if (!v.ok) return { ok: false, error: v.error, path: p };
+    tunConfig.cacheClashYaml(text, userDir());
+    return { ok: true, path: p, hosts: v.hosts.length, warnings: v.warnings || [] };
+  } catch (e) {
+    return { ok: false, error: `读取失败：${String(e && e.message || e)}`, path: p };
+  }
+});
+
 // 剪贴板必须由主进程来做：Electron 20+ 的 preload 默认在 sandbox 里跑，
 // 只能拿到 contextBridge / ipcRenderer / webFrame，`clipboard` 是 undefined。
 // 之前 preload 里直接调 clipboard.writeText，异常又被 try/catch 吞了 —— 剪贴板桥一直是坏的。
@@ -1111,6 +1220,15 @@ ipcMain.handle('runtime:start', async (e, cfg) => {
 });
 
 ipcMain.handle('runtime:stop', async () => stopRuntime());
+// 一键重置 = 销毁旧环境 + 立即重建启动，封号后不用手动点两次
+ipcMain.handle('runtime:reset', async (e, cfg) => {
+  const reset = await resetRuntime();
+  if (!reset.ok) return reset;
+  const nextCfg = saveConfig(cfg || loadConfig());
+  const send = (msg) => { try { e.sender.send('runtime:progress', msg); } catch {} };
+  send('旧环境已销毁，正在生成全新环境…');
+  return startRuntime(nextCfg, send);
+});
 ipcMain.handle('runtime:check', async () => checkEnv());
 // 网络守卫状态（fail-closed 熔断 / 代理断开 / 预检结论），界面轮询用
 ipcMain.handle('net:status', async () => readNetGuard());

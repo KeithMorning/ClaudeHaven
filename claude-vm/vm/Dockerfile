@@ -60,6 +60,36 @@ RUN npm config set registry https://registry.npmmirror.com \
     && rm -rf /usr/share/doc/* \
     && ls -l /usr/local/lib/nodejs/*/lib/node_modules/@anthropic-ai/claude-code/bin/claude.exe
 
+# ---------------------------------------------------------------------------
+# 模块一：容器内自带代理内核（mihomo）+ TUN 全局接管
+#   · 内核随镜像运行，宿主 Clash 只是「导入/编辑 YAML」的辅助工具，运行时不依赖它。
+#   · GeoIP/GeoSite 必须预置：TUN 模式下 DNS 会指向内核自己（127.0.0.1:53），
+#     若启动时才去下载 MMDB，就会撞上「DNS 已指向自己但还没监听」的死锁
+#     （2026-11-16 spike 实测踩到：can't download MMDB: dns resolve failed）。
+#   · iproute2 只为排障方便；实际加 /32 主机路由复用 net-guard.py 的 AF_NETLINK。
+#   · TARGETARCH 由 buildx 注入，**内核二进制**按 amd64 / arm64 取。
+#     注意：rootfs 其余部分（apt 源、Node、Chrome、PATH）目前仍是 amd64 写死；
+#     完整 arm64 支持是另一轮工作（ubuntu-ports 源 + Node/Chrome arm64 + PATH
+#     归一化 + entrypoint 的 PATH 兼容），别以为改了这一行 Mac 就能直接跑。
+# ---------------------------------------------------------------------------
+ARG TARGETARCH=amd64
+RUN apt-get update && apt-get install -y --no-install-recommends gzip iproute2 \
+    && rm -rf /var/lib/apt/lists/*
+RUN set -eu; \
+    case "$TARGETARCH" in arm64) A=arm64 ;; *) A=amd64 ;; esac; \
+    V=v1.19.34; \
+    aria2c -x8 -s8 -q -d /tmp -o mihomo.gz \
+      "https://github.com/MetaCubeX/mihomo/releases/download/$V/mihomo-linux-$A-$V.gz"; \
+    gzip -d /tmp/mihomo.gz; \
+    mv "/tmp/mihomo-linux-$A-$V" /usr/local/bin/mihomo; \
+    chmod 755 /usr/local/bin/mihomo; \
+    mkdir -p /opt/mihomo; \
+    aria2c -x8 -s8 -q -d /opt/mihomo -o geoip.metadb \
+      "https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/geoip.metadb"; \
+    aria2c -x8 -s8 -q -d /opt/mihomo -o geosite.dat \
+      "https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/geosite.dat" || true; \
+    ls -lh /usr/local/bin/mihomo /opt/mihomo/
+
 # 脚本与桌面资源（主题 / 启动器 / 串流页面 / 欢迎页）
 COPY scripts/ /opt/scripts/
 COPY config/ /opt/config/

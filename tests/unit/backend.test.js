@@ -56,8 +56,21 @@ test('getBackend: 本机平台返回对应后端且接口齐全', () => {
   const backend = B.getBackend();
   assert.strictEqual(backend.id, B.pickBackendId(process.platform));
   for (const m of ['probe', 'runGuest', 'imageExists', 'ensureImage', 'spawnEntry',
-    'stopAll', 'diagInfo', 'guestScriptsPath', 'guestAssetsPath', 'guestWorkspacePath',
+    'stopAll', 'destroyAll', 'diagInfo', 'guestScriptsPath', 'guestAssetsPath', 'guestWorkspacePath',
     'extraHostCandidates', 'hostPortOwner']) {
     assert.ok(typeof backend[m] === 'function', `缺少接口 ${m}`);
   }
+});
+
+test('destroyAll: 两个后端都必须真正销毁数据，不能退化成只停机', () => {
+  const fs = require('node:fs');
+  const src = fs.readFileSync(
+    require('node:path').join(__dirname, '../../claude-desktop/app/lib/vm-backend.js'), 'utf8');
+  // WSL：--unregister 才删 ext4.vhdx，--terminate 只停机保数据
+  assert.match(src, /'--unregister', DISTRO/, 'WSL 重置必须注销发行版');
+  // 容器：删实例 + 删 /root 命名卷，缺卷就等于没换身份
+  assert.match(src, /'volume', 'rm', '-f', HOME_VOLUME/, '容器重置必须删除 /root 持久卷');
+  assert.match(src, /'rm', '-f', CONTAINER/, '容器重置必须删除实例');
+  // 残留 vhdx 会让下次 --import 失败
+  assert.match(src, /ext4\\\.vhdx|vhdx\$/i, 'WSL 注销后要清理残留磁盘文件');
 });

@@ -6,6 +6,8 @@ contextBridge.exposeInMainWorld('api', {
   saveConfig: (cfg) => ipcRenderer.invoke('config:save', cfg),
   start: (cfg) => ipcRenderer.invoke('runtime:start', cfg),
   stop: () => ipcRenderer.invoke('runtime:stop'),
+  // 一键环境重置：销毁旧 VM 并重建（封号后换全新身份），破坏性操作由界面二次确认
+  reset: (cfg) => ipcRenderer.invoke('runtime:reset', cfg),
   status: () => ipcRenderer.invoke('runtime:status'),
   check: () => ipcRenderer.invoke('runtime:check'),
   netStatus: () => ipcRenderer.invoke('net:status'),
@@ -16,6 +18,8 @@ contextBridge.exposeInMainWorld('api', {
   authStatus: () => ipcRenderer.invoke('auth:status'),
   authLogin: () => ipcRenderer.invoke('auth:login'),
   detectProxy: () => ipcRenderer.invoke('proxy:detect'),
+  // 模块一：选择外部 Clash/Mihomo YAML，交给容器内内核
+  pickClashYaml: () => ipcRenderer.invoke('clash:pick'),
   pickWorkspace: () => ipcRenderer.invoke('workspace:pick'),
   openWorkspace: (p) => ipcRenderer.invoke('workspace:open', p),
   exportDiag: () => ipcRenderer.invoke('diag:export'),

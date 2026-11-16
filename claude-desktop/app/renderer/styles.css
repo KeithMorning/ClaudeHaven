@@ -125,6 +125,9 @@ input:focus, select:focus { border-color: var(--accent); }
 .btn.primary:hover { background: var(--accent-2); }
 .btn.danger { color: #ffb4ae; }
 .btn.ghost { flex: 1; }
+/* 一键重置：破坏性操作用警示色，但不做成实心 danger，避免和「停止」混淆 */
+.btn-reset { color: #ffb4ae; border-color: rgba(255, 180, 174, .35); }
+.btn-reset:hover { border-color: #ffb4ae; }
 #pick { flex: 0 0 42px; padding: 9px 0; }
 
 .status {
