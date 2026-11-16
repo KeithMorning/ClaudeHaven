@@ -14,8 +14,9 @@
 | `claude-desktop/` | Electron 桌面端：启动/停止、配置、自检、双显示模式、打包 |
 | `claude-vm/` | Linux 运行时：Dockerfile、entrypoint、Rime 输入法、Openbox、网络守卫 |
 | `build/` | 构建与排障脚本（产物与日志已由 `.gitignore` 排除） |
-| `docs/` | 方案调研存档 |
-| `开发交接.md` | 完整开发交接：架构、约束、踩过的坑（**建议先看这个**） |
+| `doc/` | **技术文档 wiki**：按主题拆分的架构/网络/桌面/工程/踩坑档案（**建议先看 [`doc/index.md`](doc/index.md)**） |
+| `docs/` | 早期方案调研存档（如 WechatOnCloud） |
+| `开发交接.md` | 已拆分的导航页，指向 `doc/` |
 
 ## 构建桌面端
 
@@ -34,7 +35,8 @@ macOS 上未签名的 dmg 首次打开需右键 →「打开」绕过 Gatekeeper
 `rootfs.tar.gz`（约 620 MB）**不在仓库里**。它由 `claude-vm/vm/Dockerfile` 构建后导出，
 应用首次启动时导入为运行时：Windows 上是名为 `claude-vm` 的 **WSL2 发行版**，
 macOS 上是 **Docker / OrbStack 容器**（`docker import`，Apple Silicon 靠 Rosetta 跑 amd64）。
-构建与导出方法见 [`开发交接.md`](开发交接.md) 第 2 节；macOS 细节见第 9 节。
+构建与导出方法见 [`doc/engineering/01-构建与打包.md`](doc/engineering/01-构建与打包.md)；
+macOS 细节见 [`doc/platform/02-macOS-容器后端.md`](doc/platform/02-macOS-容器后端.md)。
 
 ## 安全边界
 
@@ -44,7 +46,8 @@ macOS 上是 **Docker / OrbStack 容器**（`docker import`，Apple Silicon 靠 
 
 ## 文档
 
-- [开发交接.md](开发交接.md) — 架构、约束、已知边界、踩坑记录
+- [doc/index.md](doc/index.md) — 技术文档 wiki 索引：架构、网络、桌面、平台、工程、安全、22 坑档案
+- [doc/log.md](doc/log.md) — 文档变更日志
 - [tests/README.md](tests/README.md) — 测试体系：分层、坑→测试映射、发版 checklist
 - [claude-desktop/README.md](claude-desktop/README.md) — 应用侧功能与各版本修复说明
 - [claude-vm/README.md](claude-vm/README.md) — 早期 Docker 方案存档

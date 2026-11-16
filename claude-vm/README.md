@@ -2,8 +2,9 @@
 
 > **本文档是早期 Docker + noVNC 方案的存档（1.0.20 之前）。**
 > 现行实现对 Windows 走 **WSL 导入 + WSLg 原生窗口**，主路径不再经过浏览器串流，
-> Docker 只用于构建期生成 rootfs。当前架构、已知边界与开发约束见仓库根目录的
-> `开发交接.md` 与 `claude-desktop/README.md`；本文保留用于理解「为什么最后没走容器这条路」。
+> Docker 只用于构建期生成 rootfs。当前架构、已知边界与开发约束见
+> [`doc/index.md`](../doc/index.md) 与 `claude-desktop/README.md`；
+> 本文保留用于理解「为什么最后没走容器这条路」。
 
 按你描述的架构实现：**用户在自己电脑上装一个本地程序 → 程序在本机拉起一个虚拟环境容器 →
 容器里跑桌面 + Chrome + Claude Code + noVNC 流服务 → 流服务在 localhost，访问无网速限制 →
