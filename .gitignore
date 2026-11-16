@@ -45,3 +45,7 @@ claude-desktop/build/*
 # Python 编译产物
 __pycache__/
 *.pyc
+
+# rootfs 重建的本地备份与 PDF 提取原始稿（脚本本身入库）
+build/rootfs-pre-*-backup.tar.gz
+build/pdf-summary-*/content.txt
