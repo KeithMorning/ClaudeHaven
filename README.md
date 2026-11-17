@@ -6,19 +6,32 @@
 
 - **串流桌面（唯一显示模式）**：TigerVNC + websockify + noVNC，只监听 `127.0.0.1`。
 - **导入 YAML + 选择节点**：从 `proxies` 里选一个节点作为全量出口。
-- **伪装画像**：中国台湾·台北 / 美国·纽约两套，一次切换时区、语言与浏览器语言头。
+- **伪装画像**：中国台湾·台北 / 美国·洛杉矶两套，一次切换时区、语言与浏览器语言头。
 - **独立检查报告**：单独窗口渲染检测结果，不遮挡桌面、不影响使用。
+
+## 界面预览
+
+**启动前** — 深色框架 + 奶油色舞台，中央是启动入口；底部那行细的是**宿主侧状态信息**
+（地区 / 延迟 / 网络熔断 / 提示），不是任务栏。
+
+![Claude VM 启动前](doc/images/ui-idle.png)
+
+**运行中** — 串流显示的是真实的 Linux X11 桌面。画面底部那条是 **VM 内的 tint2 任务栏**：
+左侧启动器与窗口任务项来自客机桌面，右侧时钟走 VM 自己的时区（洛杉矶 `05:08 / Tue 17 Nov`），
+与宿主本机时间无关；再下面那行细的才是宿主状态信息。
+
+![Claude VM 运行中：串流桌面与 VM 任务栏](doc/images/ui-running.png)
 
 ## 仓库结构
 
 | 路径 | 说明 |
 | --- | --- |
-| `claude-desktop/` | Electron 桌面端：启动/停止、配置、自检、双显示模式、打包 |
+| `claude-desktop/` | Electron 桌面端：启动/停止、配置、检查报告、串流桌面、打包 |
 | `claude-vm/` | Linux 运行时：Dockerfile、entrypoint、Rime 输入法、Openbox、网络守卫 |
 | `build/` | 构建与排障脚本（产物与日志已由 `.gitignore` 排除） |
 | `doc/` | **技术文档 wiki**：按主题拆分的架构/网络/桌面/工程/踩坑档案（**建议先看 [`doc/index.md`](doc/index.md)**） |
 | `docs/` | 早期方案调研存档（如 WechatOnCloud） |
-| `开发交接.md` | 已拆分的导航页，指向 `doc/` |
+| `doc/images/` | README 界面截图 |
 
 ## 构建桌面端
 
@@ -49,7 +62,7 @@ macOS 细节见 [`doc/platform/02-macOS-容器后端.md`](doc/platform/02-macOS-
 
 ## 文档
 
-- [doc/index.md](doc/index.md) — 技术文档 wiki 索引：架构、网络、桌面、平台、工程、安全、22 坑档案
+- [doc/index.md](doc/index.md) — 技术文档 wiki 索引：架构、网络、桌面、平台、工程、安全、26 坑档案
 - [doc/log.md](doc/log.md) — 文档变更日志
 - [tests/README.md](tests/README.md) — 测试体系：分层、坑→测试映射、发版 checklist
 - [claude-desktop/README.md](claude-desktop/README.md) — 应用侧功能与各版本修复说明
