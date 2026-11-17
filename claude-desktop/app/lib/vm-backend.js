@@ -123,6 +123,8 @@ function createWslBackend() {
       const l = await wsl(['-l', '-q']);
       if (!l.ok) {
         const detail = (l.stderr || l.stdout || blob).replace(/\0/g, '').trim();
+        // 全新安装且尚无发行版时，WSL 可能以此错误返回列表；应用稍后会导入自己的发行版。
+        if (st.ok && /WSL_E_DEFAULT_DISTRO_NOT_FOUND/i.test(detail)) return { ok: true };
         return { ok: false, error: `${HELP}\n\n（WSL 返回：${detail.slice(0, 300)}）` };
       }
       return { ok: true };
