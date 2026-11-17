@@ -11,7 +11,7 @@ const STATUS_LABEL = { pass: '通过', warn: '注意', fail: '失败', info: '�
 let lastData = null;
 let lastRaw = '';
 let lastError = '';
-let showAll = false;
+let showAll = true;
 let lastTime = '';
 
 function panelMessage(text, isError) {
@@ -24,10 +24,10 @@ function panelMessage(text, isError) {
 function renderVerdict(summary, cc, runtimeUp) {
   const { pass, warn, fail } = summary;
   const v = $('cpVerdict');
-  let kind = 'ok', text = '全部通过，各维度指向同一环境';
+  let kind = 'ok', text = '代理出口检查完成';
   if (!runtimeUp) { kind = 'warn'; text = '环境未运行，检查结果不完整'; }
   else if (fail > 0) { kind = 'err'; text = `发现 ${fail} 项检查失败`; }
-  else if (warn > 0) { kind = 'warn'; text = `环境可用，但有 ${warn} 项需要留意`; }
+  else if (warn > 0) { kind = 'warn'; text = `检查完成，${warn} 项需要留意`; }
   v.className = 'cp-verdict ' + kind;
 
   const label = document.createElement('span');
@@ -43,13 +43,6 @@ function renderVerdict(summary, cc, runtimeUp) {
   });
   // 检测站那个百分比是「扣了多少分」，直接给同一口径的数字，
   // 免得出现「报告全绿、去网站一看 41 分」对不上。
-  if (cc && cc.total > 0) {
-    const p = document.createElement('span');
-    p.className = 'pill cc';
-    p.textContent = `checkcc 估算 ${cc.total} 分`;
-    p.title = '基于接口和本地规则估算，浏览器实际结果可能不同';
-    pills.appendChild(p);
-  }
   v.append(label, pills);
 }
 
@@ -167,14 +160,13 @@ function buildExportHtml() {
   rows.push('pre{background:#0f1115;border:1px solid #232833;border-radius:8px;padding:12px;overflow:auto;font-size:11px;color:#aab2c0}');
   rows.push('</style></head><body>');
   rows.push('<h1>Claude VM · 环境检查报告</h1>');
-  rows.push(`<div class="sub">生成时间 ${esc(lastTime)} ｜ 画像 ${esc(d ? d.regionLabel : '')} ｜ 出口链路：容器内 mihomo + TUN</div>`);
+  rows.push(`<div class="sub">生成时间 ${esc(lastTime)}</div>`);
   if (d) {
     const s = d.summary || {};
     rows.push('<div>');
     ['pass', 'warn', 'fail', 'info'].forEach((k) => {
       if (s[k]) rows.push(`<span class="pill ${k}">${STATUS_LABEL[k]} ${s[k]}</span>`);
     });
-    if (d.checkcc && d.checkcc.total > 0) rows.push(`<span class="pill cc">checkcc 估算 ${d.checkcc.total} 分</span>`);
     rows.push('</div>');
     if (!d.runtimeUp) rows.push('<p class="a">注意：生成报告时虚拟环境未在运行，部分项目无法检测。</p>');
     for (const g of d.groups || []) {
@@ -208,7 +200,7 @@ function render(res) {
   $('cpVerdict').className = 'cp-verdict';
   $('cpVerdict').innerHTML = '';
   lastData = null;
-  showAll = false;
+  showAll = true;
 
   if (!res || res.ok !== true || !res.data) {
     lastError = (res && (res.error || res.out)) || '检查失败，未获取到结果。';

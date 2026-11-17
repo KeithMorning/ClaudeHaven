@@ -25,7 +25,7 @@ const APP_ICON = path.join(__dirname, 'renderer', 'assets', 'app-icon.png');
 // 运行时脚本 / 界面资源有变更时 +1。它进配置指纹，保证升级后第一次点「启动」
 // 不会去「接管」一个由旧脚本拉起的会话 —— 那些会话里的 openbox、entrypoint、
 // 字体、内核配置全是旧版的，接管等于永远不生效。
-const RUNTIME_REV = 19;
+const RUNTIME_REV = 20;
 let win = null;
 let runtimeProc = null;
 // 主动停止/退出时收到的 exit 不是异常，不该弹「意外退出」提示
@@ -772,7 +772,18 @@ ipcMain.handle('runtime:reset', async (e, cfg) => {
   send('旧环境已销毁，正在生成全新环境…');
   return startRuntime(nextCfg, send);
 });
-ipcMain.handle('runtime:check', async () => checkEnv());
+ipcMain.handle('runtime:check', async () => {
+  if (!(await distroExists()) || !(await runtimeAlive())) {
+    return { ok: false, error: '请先启动虚拟环境，再检查代理出口。' };
+  }
+  const result = await runWsl(['python3', '/opt/scripts/check-proxy.py'], { timeout: 25000 });
+  const raw = String(result.stdout || '').trim();
+  try {
+    const data = JSON.parse(raw);
+    if (Array.isArray(data.groups) && data.summary) return { ok: true, data, raw };
+  } catch { /* Return a readable error for missing or invalid output. */ }
+  return { ok: false, error: '代理出口检查未完成，请重试。', raw };
+});
 // 网络守卫状态（fail-closed 熔断 / 内核存活 / 预检结论），主界面轮询用
 ipcMain.handle('net:status', async () => readNetGuard());
 ipcMain.handle('wsl:probe', async () => probeWsl());

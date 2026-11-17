@@ -556,7 +556,7 @@ test('2.0：版本号与 RUNTIME_REV 已同步升级', () => {
   const pkg = JSON.parse(readRel('claude-desktop/package.json'));
   assert.strictEqual(pkg.version, '2.1.0', '2.1 主界面改版 + App Icon 是功能版本，2.0.x 全是修复包');
   // 画像 id 没变（us），但时区从纽约改成了洛杉矶；不 bump REV 会 resume 旧会话继续用美东时间
-  assert.match(MAIN_SRC, /const RUNTIME_REV = 19;/);
+  assert.match(MAIN_SRC, /const RUNTIME_REV = 20;/);
 });
 
 // ---------- 坑 23：wsl.exe 吞 $ 导致脚本同步假绿 ----------

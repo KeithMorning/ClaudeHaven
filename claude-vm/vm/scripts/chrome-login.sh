@@ -41,7 +41,7 @@ fi
 
 # 从桌面打开浏览器时展示常用页面；显式传入的链接用于登录等外部调用。
 if [ "$#" -eq 0 ]; then
-  set -- https://ip.net.coffee/claude/ https://claude.ai/
+  set -- https://ip.net.coffee/claude/
 fi
 
 exec google-chrome-stable \
