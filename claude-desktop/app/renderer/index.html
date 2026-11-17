@@ -45,9 +45,6 @@
       <button type="button" id="navWorkspace" class="tb-btn" title="回到串流桌面">
         <svg class="ico"><use href="#i-folder" /></svg><span>工作区</span>
       </button>
-      <button type="button" id="check" class="tb-btn" title="环境检查与诊断概览">
-        <svg class="ico"><use href="#i-monitor" /></svg><span>环境检查</span>
-      </button>
       <button type="button" id="navSettings" class="tb-btn" title="打开环境设置">
         <svg class="ico"><use href="#i-settings" /></svg><span>设置</span>
       </button>
@@ -88,6 +85,7 @@
             <button type="button" data-tab="persona" class="active"><svg class="ico"><use href="#i-monitor" /></svg>环境画像</button>
             <button type="button" data-tab="network"><svg class="ico"><use href="#i-shield" /></svg>网络与安全</button>
             <button type="button" data-tab="workspace"><svg class="ico"><use href="#i-folder" /></svg>工作区与输入</button>
+            <button type="button" data-tab="check"><svg class="ico"><use href="#i-monitor" /></svg>环境检查</button>
             <button type="button" data-tab="advanced"><svg class="ico"><use href="#i-refresh" /></svg>高级与重置</button>
           </aside>
 
@@ -95,106 +93,75 @@
             <!-- 环境画像 -->
             <section class="tab-panel active" data-panel="persona">
               <h2>环境画像</h2>
-              <p class="tab-sub">选择这套虚拟环境要伪装成的本地用户，时区、系统语言与浏览器语言会一起切换。</p>
+              <p class="tab-sub">选择虚拟环境使用的地区，系统时区和语言会随之调整。</p>
               <div id="personaCards" class="persona-cards"></div>
-              <div class="hint" id="personaHint"></div>
-              <div class="info-card blue">
-                <svg class="ico"><use href="#i-info" /></svg>
-                <div><b>画像在下次启动时生效</b><span>时区与语言在会话启动那一刻写入，切换画像会强制重建会话，不会让旧桌面带着旧语言继续跑。</span></div>
-              </div>
+              <p class="persona-note">更改后将在下次启动虚拟环境时生效。</p>
             </section>
 
             <!-- 网络与安全 -->
             <section class="tab-panel" data-panel="network">
               <h2>网络与安全</h2>
-              <p class="tab-sub">配置网络出口、代理与隔离策略，保障虚拟环境的稳定与安全。</p>
-
-              <div class="form-row">
-                <label for="clashYamlPath">配置文件 <span class="q" title="每次启动都读取该文件的最新内容">?</span></label>
-                <div class="form-ctrl">
-                  <div class="input-with-icon"><svg class="ico"><use href="#i-file" /></svg><input id="clashYamlPath" type="text" placeholder="选择订阅或配置 .yaml 文件" spellcheck="false" /></div>
-                  <button type="button" id="pickClash" class="btn ghost"><svg class="ico"><use href="#i-folder" /></svg>更换</button>
+              <div class="network-card">
+              <h3>网络连接</h3>
+              <div class="network-field">
+                <label for="clashYamlPath">配置文件</label>
+                <div class="form-ctrl network-controls">
+                  <input id="clashYamlPath" type="text" placeholder="选择 YAML 配置文件" spellcheck="false" />
+                  <button type="button" id="pickClash" class="btn ghost">选择文件</button>
                 </div>
                 <div class="hint" id="yamlHint"></div>
               </div>
 
-              <div class="form-row">
-                <label for="selectedNode">出口节点 <span class="q" title="所有流量走这一个节点，订阅原有分流规则会被忽略">?</span></label>
-                <div class="form-ctrl">
-                  <select id="selectedNode"></select>
-                  <button type="button" id="refreshNodes" class="btn ghost">刷新</button>
+              <div class="network-field network-node-field">
+                <div class="network-field-heading"><label for="nodePicker">出口节点</label><span class="network-actions"><button type="button" id="refreshNodes" class="node-action">刷新节点</button><button type="button" id="testLatency" class="node-action">测试延迟</button></span></div>
+                <div class="node-picker">
+                  <select id="selectedNode" hidden tabindex="-1" aria-hidden="true"></select>
+                  <button type="button" id="nodePicker" class="node-picker-button" aria-label="选择出口节点" aria-expanded="false" aria-controls="nodeList">
+                    <span id="nodePickerLabel">请选择节点</span><span class="latency-value" id="latencyValue"><b id="latencyText">未测试</b></span><span class="node-chevron" aria-hidden="true"></span>
+                  </button>
+                  <div id="nodeList" class="node-list" hidden></div>
                 </div>
-                <div class="notice orange"><svg class="ico"><use href="#i-info" /></svg>运行期间不可切换，修改后下次启动生效</div>
                 <div class="hint" id="nodeHint"></div>
               </div>
-
-              <div class="form-row">
-                <label>测试延迟 <span class="q" title="经容器内内核实测到 gstatic 的往返延迟">?</span></label>
-                <div class="form-ctrl">
-                  <span class="latency-value" id="latencyValue"><svg class="ico"><use href="#i-chart" /></svg><b id="latencyText">未测</b></span>
-                  <button type="button" id="testLatency" class="btn ghost"><svg class="ico"><use href="#i-refresh" /></svg>重新测试</button>
-                </div>
               </div>
 
-              <div class="form-row">
-                <label for="netGuard">网络熔断 <span class="q" title="严格模式移除默认路由并关闭 IPv6，内核退出即断网">?</span></label>
-                <select id="netGuard">
-                  <option value="strict">严格 · 仅允许容器内内核出网（推荐）</option>
-                  <option value="off">关闭 · 允许直连（不推荐）</option>
-                </select>
-              </div>
-
-              <div class="notice green" id="lockNotice"><svg class="ico"><use href="#i-check" /></svg><span>已启用：容器网络经 Mihomo + TUN 出网，阻断直连与旁路。</span></div>
-
-              <div class="chain">
-                <span class="chain-node"><svg class="ico"><use href="#i-monitor" /></svg>宿主机</span>
-                <svg class="ico chain-arrow"><use href="#i-chevron" /></svg>
-                <span class="chain-node dashed">隔离虚拟环境</span>
-                <svg class="ico chain-arrow"><use href="#i-chevron" /></svg>
-                <span class="chain-node dashed strong">容器内 Mihomo + TUN</span>
-                <svg class="ico chain-arrow"><use href="#i-chevron" /></svg>
-                <span class="chain-node"><svg class="ico"><use href="#i-globe" /></svg>Internet</span>
-              </div>
-              <div class="foot-note"><svg class="ico"><use href="#i-shield" /></svg>网络路径：宿主机 → 隔离虚拟环境 → 容器内 Mihomo + TUN → Internet　｜　节点变更为启动后生效</div>
             </section>
 
             <!-- 工作区与输入 -->
             <section class="tab-panel" data-panel="workspace">
               <h2>工作区与输入</h2>
-              <p class="tab-sub">配置主机与虚拟机的文件共享、输入法与桌面行为。</p>
+              <p class="tab-sub">管理共享目录，查看中文输入快捷键。</p>
 
               <div class="form-row">
                 <label for="workspace"><svg class="ico"><use href="#i-folder" /></svg>共享工作区</label>
-                <p class="field-desc">主机与虚拟机之间共享的工作目录，适合存放项目、数据与中间文件。</p>
-                <div class="form-ctrl">
-                  <div class="input-with-icon"><svg class="ico"><use href="#i-folder" /></svg><input id="workspace" type="text" spellcheck="false" /></div>
-                  <button type="button" id="pick" class="btn ghost">…</button>
-                  <button type="button" id="openWs" class="btn ghost"><svg class="ico"><use href="#i-external" /></svg>在资源管理器中打开</button>
+                <p class="field-desc">该目录中的文件可在主机和虚拟机中访问。</p>
+                <div class="form-ctrl workspace-controls">
+                  <input id="workspace" type="text" spellcheck="false" />
+                  <button type="button" id="pick" class="btn ghost">选择目录</button>
+                  <button type="button" id="openWs" class="btn ghost">打开目录</button>
                 </div>
               </div>
 
               <div class="form-row">
-                <label for="inputMethod"><svg class="ico"><use href="#i-keyboard" /></svg>中文输入法</label>
-                <p class="field-desc">在虚拟机中使用的中文输入方案。</p>
-                <div class="form-ctrl">
-                  <select id="inputMethod">
-                    <option value="off">关闭 · 用宿主输入法打好后粘贴</option>
-                    <option value="rime">fcitx5 + Rime 万象拼音（简体词库）</option>
-                  </select>
-                </div>
+                <label><svg class="ico"><use href="#i-keyboard" /></svg>中文输入法</label>
+                <p class="field-desc">内置万象拼音（简体词库）</p>
                 <div class="shortcuts"><kbd>Ctrl+Space</kbd> 切换输入法 <kbd>Shift</kbd> 中英切换</div>
               </div>
+            </section>
 
-              <div class="info-card blue tall">
-                <svg class="ico"><use href="#i-info" /></svg>
-                <div><b>输入法运行于虚拟机内</b><span>已在虚拟机中预置 fcitx5 与 Rime、词库、配置与自定义方案均保存在虚拟机内，不影响主机系统。</span></div>
-                <div class="ime-glyph">中<sub>A</sub></div>
+            <section class="tab-panel" data-panel="check">
+              <h2>环境检查</h2>
+              <p class="tab-sub" id="cpSub">检查虚拟环境、网络出口和浏览器配置。</p>
+              <div class="check-actions">
+                <button id="cpRerun" type="button" class="btn primary">开始检查</button>
+                <button id="cpFilter" type="button" class="btn ghost" hidden>显示全部</button>
+                <button id="cpRawToggle" type="button" class="btn ghost" disabled>原始输出</button>
+                <button id="cpExport" type="button" class="btn ghost" disabled>导出报告</button>
               </div>
-
-              <div class="two-cards">
-                <div class="mini-card"><div class="mini-title"><svg class="ico"><use href="#i-folder" /></svg>文件共享说明</div><p>共享工作区在主机与虚拟机之间双向可见，可直接读写、编辑与同步文件。</p></div>
-                <div class="mini-card"><div class="mini-title"><svg class="ico"><use href="#i-monitor" /></svg>桌面行为</div><p>虚拟机桌面会跟随 Claude VM 窗口大小自动适配分辨率，提供一致的桌面使用体验。</p></div>
-              </div>
+              <div class="rp-note" id="rpNote" role="status"></div>
+              <div id="cpVerdict" class="cp-verdict">选择开始检查，查看当前环境状态。</div>
+              <div id="cpBody" class="cp-body"></div>
+              <pre id="cpRaw" class="cp-raw" hidden></pre>
             </section>
 
             <!-- 高级与重置 -->
@@ -232,11 +199,7 @@
             </section>
           </div>
         </div>
-        <div class="modal-foot">
-          <span class="foot-hint" id="settingsHint"></span>
-          <button type="button" class="btn ghost" data-close="settingsOverlay">取消</button>
-          <button type="button" id="settingsSave" class="btn primary">保存设置</button>
-        </div>
+        <div class="foot-hint settings-hint" id="settingsHint" role="status"></div>
       </section>
     </div>
 
@@ -275,7 +238,7 @@
        不要再画一套假的 dock / 窗口标签 / 时钟，否则会出现两个时钟、两个任务栏。 -->
   <footer class="statusbar">
     <div class="sb-row">
-      <span class="sb-persona" id="sbPersona">🇺🇸 美国 · 洛杉矶 (LAX)</span>
+      <span class="sb-persona" id="sbPersona">—</span>
       <span class="sb-sep"></span>
       <span class="sb-metric" id="sbLatency"><svg class="ico"><use href="#i-chart" /></svg>— ms</span>
       <span class="sb-sep"></span>
@@ -285,6 +248,7 @@
     </div>
   </footer>
 </div>
+<script src="report.js"></script>
 <script src="renderer.js"></script>
 </body>
 </html>

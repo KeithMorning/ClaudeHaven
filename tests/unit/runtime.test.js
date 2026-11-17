@@ -77,8 +77,8 @@ test('cfgFingerprint: 画像 / 节点 / 订阅内容 / 熔断 / 输入法任一�
   const base = fp(baseCfg, d);
   assert.notStrictEqual(fp({ ...baseCfg, persona: 'us' }, d), base, '切画像必须重建会话');
   assert.notStrictEqual(fp({ ...baseCfg, selectedNode: 'hk-1' }, d), base, '换节点必须重建内核');
-  assert.notStrictEqual(fp({ ...baseCfg, netGuard: 'off' }, d), base, '熔断改内核路由表');
-  assert.notStrictEqual(fp({ ...baseCfg, inputMethod: 'rime' }, d), base, '输入法要重起 fcitx5');
+  assert.strictEqual(fp({ ...baseCfg, netGuard: 'off' }, d), base, '旧配置也必须启用熔断');
+  assert.strictEqual(fp({ ...baseCfg, inputMethod: 'rime' }, d), base, '固定启用内置输入法');
 });
 
 test('坑 23：旧 config.json 残留的 tz / lang 不改变指纹（画像才是唯一决定项）', () => {

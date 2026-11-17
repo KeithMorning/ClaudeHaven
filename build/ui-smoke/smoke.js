@@ -76,7 +76,7 @@ app.whenReady().then(async () => {
     activeTab: (document.querySelector('#settingsNav .active') || {}).textContent,
     activePanel: (document.querySelector('.tab-panel.active') || {}).dataset.panel,
   }))()`);
-  await probe(`document.getElementById('settingsSave').click(); true`);
+  await probe(`document.querySelector('[data-close="settingsOverlay"]').click(); true`);
   const closed = await probe(`document.getElementById('settingsOverlay').hidden`);
 
   console.log(JSON.stringify({ errors, base, opened, switched, closedAfterSave: closed }, null, 2));

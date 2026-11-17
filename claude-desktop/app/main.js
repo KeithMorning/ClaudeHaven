@@ -25,7 +25,7 @@ const APP_ICON = path.join(__dirname, 'renderer', 'assets', 'app-icon.png');
 // 运行时脚本 / 界面资源有变更时 +1。它进配置指纹，保证升级后第一次点「启动」
 // 不会去「接管」一个由旧脚本拉起的会话 —— 那些会话里的 openbox、entrypoint、
 // 字体、内核配置全是旧版的，接管等于永远不生效。
-const RUNTIME_REV = 14;
+const RUNTIME_REV = 19;
 let win = null;
 let runtimeProc = null;
 // 主动停止/退出时收到的 exit 不是异常，不该弹「意外退出」提示
@@ -108,6 +108,8 @@ function loadConfig() {
 
 function mergeCfg(saved) {
   const c = { ...defaultConfig(), ...saved };
+  c.netGuard = 'strict';
+  c.inputMethod = 'rime';
   // 2.0：tz / lang 不再是配置字段，一律由 lib/personas.js 从 persona 派生。
   // 1.0.x 的 config.json 里残留 tz=America/Los_Angeles 之类旧值，若不清洗会
   // 和画像（us → America/New_York）分叉：日志 spawn 用旧时区，报告显示新画像。
@@ -158,7 +160,7 @@ function defaultConfig() {
     // 出口落在 CN/HK/MO 时是否硬阻断
     netGuardStrictRegion: true,
     // rime —— fcitx5 + Rime 万象拼音词库
-    inputMethod: 'off',
+    inputMethod: 'rime',
   };
 }
 
@@ -206,6 +208,9 @@ async function syncScripts() {
   // openbox 配置热更新：把**旧版回退源**一并更新，否则 entrypoint 每次启动又覆盖回旧版
   // （1.0.27 的教训：装了新版仍点不动标题栏 ✕）。
   const openboxHotfix = [
+    'if [ -f /opt/assets/novnc/desktop.html ]; then',
+    'cp -f /opt/assets/novnc/desktop.html /usr/share/novnc/desktop.html || exit 1;',
+    'fi;',
     'if [ -f /opt/assets/config/openbox-rc.xml ]; then',
     'mkdir -p /root/.config/openbox;',
     'cp -f /opt/assets/config/openbox-rc.xml /root/.config/openbox/rc.xml;',
@@ -335,9 +340,9 @@ function cfgFingerprint(cfg) {
     tun,
     ws: cfg.workspace || '',
     // 熔断开关改变的是内核路由表，不能「接管」旧会话
-    ng: cfg.netGuard === 'off' ? 'off' : 'strict',
+    ng: 'strict',
     // 输入法要重起 fcitx5，同样必须重建会话
-    im: cfg.inputMethod === 'rime' ? 'rime' : 'off',
+    im: 'rime',
     // 脚本/资源修订号：升级后强制重建一次
     rev: RUNTIME_REV,
   });
@@ -476,9 +481,9 @@ async function startRuntime(cfg, onProgress) {
     NOVNC_PORT: String(NOVNC_PORT),
     DISPLAY_MODE: 'desktop',
     TUN_NODE: chosen,
-    NET_GUARD: cfg.netGuard === 'off' ? 'off' : 'strict',
+    NET_GUARD: 'strict',
     NET_GUARD_STRICT_REGION: cfg.netGuardStrictRegion === false ? '0' : '1',
-    INPUT_METHOD: cfg.inputMethod === 'rime' ? 'rime' : 'off',
+    INPUT_METHOD: 'rime',
     WORKSPACE: guestWs,
   };
 

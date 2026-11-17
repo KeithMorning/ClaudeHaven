@@ -4,17 +4,19 @@
 
 !! ---------------- 窗口 ----------------
 window.active.title.bg: flat solid
-window.active.title.bg.color: #1f2938
+window.active.title.bg.color: #20202c
+window.active.label.bg: parentrelative
 window.active.label.text.color: #e8edf5
-window.active.border.color: #2b3546
+window.active.border.color: #45414a
 window.active.client.color: #0d1017
 window.active.handle.bg: flat solid
-window.active.handle.bg.color: #1f2938
+window.active.handle.bg.color: #20202c
 window.active.grip.bg: flat solid
 window.active.grip.bg.color: #1c2534
 
 window.inactive.title.bg: flat solid
-window.inactive.title.bg.color: #161d28
+window.inactive.title.bg.color: #171721
+window.inactive.label.bg: parentrelative
 window.inactive.label.text.color: #7d899c
 window.inactive.border.color: #1e2632
 window.inactive.client.color: #0d1017
@@ -25,8 +27,8 @@ window.inactive.grip.bg.color: #141a24
 
 window.label.active.text.color: #e8edf5
 window.label.inactive.text.color: #7d899c
-window.label.active.text.justify: center
-window.label.inactive.text.justify: center
+window.label.active.text.justify: left
+window.label.inactive.text.justify: left
 window.active.title.separator.color: #2b3546
 window.inactive.title.separator.color: #1e2632
 
@@ -47,7 +49,7 @@ window.inactive.button.*.pressed.bg.color: #26303f
 !! ---------------- 尺寸 ----------------
 border.width: 1
 padding.width: 8
-padding.height: 5
+padding.height: 9
 window.handle.width: 0
 window.client.padding.width: 0
 window.client.padding.height: 0

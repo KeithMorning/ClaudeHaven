@@ -14,7 +14,7 @@
 // 某个按钮的 disabled 属性反推运行时状态。
 
 const $ = (id) => document.getElementById(id);
-const novncUrl = (host) => `http://${host || '127.0.0.1'}:6080/desktop.html?autoconnect=1`;
+const novncUrl = (host) => `http://${host || '127.0.0.1'}:6080/desktop.html?autoconnect=1&v=2`;
 
 let cfg = {};
 let personas = [];
@@ -23,9 +23,6 @@ let nodeDelays = {};
 let running = false;
 let lastEgress = '';
 let lastHint = '';
-
-// 画像时区的机场码，只用于状态栏那一行短标签
-const REGION_CODE = { 'America/Los_Angeles': 'LAX', 'Asia/Taipei': 'TPE' };
 
 /** 更新带 svg 图标的元素文字，保留图标本身（不想用 innerHTML 引 XSS）。 */
 function setLabel(el, text) {
@@ -54,7 +51,7 @@ function setStatus(text, kind) {
 function setHint(msg, kind) {
   const el = $('settingsHint');
   el.textContent = msg || '';
-  el.className = 'foot-hint' + (kind ? ' ' + kind : '');
+  el.className = 'foot-hint settings-hint' + (kind ? ' ' + kind : '');
   lastHint = msg ? (msg.length > 60 ? `${msg.slice(0, 59)}…` : msg) : '';
   renderSbItems();
 }
@@ -65,15 +62,15 @@ function gather() {
     clashYamlPath: $('clashYamlPath').value.trim(),
     selectedNode: $('selectedNode').value,
     workspace: $('workspace').value.trim(),
-    netGuard: $('netGuard').value === 'off' ? 'off' : 'strict',
+    netGuard: 'strict',
     netGuardStrictRegion: $('strictRegion').checked,
-    inputMethod: $('inputMethod').value === 'rime' ? 'rime' : 'off',
+    inputMethod: 'rime',
   };
 }
 
 function save() {
   cfg = { ...cfg, ...gather() };
-  window.api.saveConfig(cfg);
+  window.api.saveConfig(cfg).catch((error) => setHint(`设置保存失败：${error.message}`, 'err'));
   return cfg;
 }
 
@@ -83,13 +80,12 @@ function updateSbPersona() {
   if (!p) return;
   const us = p.tz === 'America/Los_Angeles';
   const flag = us ? '🇺🇸' : '🇨🇳';
-  const code = REGION_CODE[p.tz] ? ` (${REGION_CODE[p.tz]})` : '';
-  setLabel($('sbPersona'), `${flag} ${p.name}${code}`);
+  setLabel($('sbPersona'), `${flag} ${p.name}`);
 }
 
 function updateLatency(ms) {
   const has = typeof ms === 'number';
-  $('latencyText').textContent = has ? `${ms} ms` : '未测';
+  $('latencyText').textContent = has ? `${ms} ms` : '未测试';
   const el = $('sbLatency');
   setLabel(el, has ? `${ms} ms` : '— ms');
   el.className = 'sb-metric' + (has ? (ms < 200 ? ' ok' : ms < 400 ? ' warn' : ' err') : '');
@@ -105,41 +101,42 @@ function renderPersonas() {
     const card = document.createElement('button');
     card.type = 'button';
     card.className = 'persona-card' + (p.id === current ? ' active' : '');
+    card.setAttribute('aria-pressed', String(p.id === current));
     card.dataset.persona = p.id;
     const name = document.createElement('div');
     name.className = 'pc-name';
     name.textContent = p.name;
-    const meta = document.createElement('div');
-    meta.className = 'pc-meta';
-    meta.textContent = `${p.tz} · ${p.lang}`;
-    const desc = document.createElement('div');
-    desc.className = 'pc-desc';
-    desc.textContent = p.desc;
-    card.append(name, meta, desc);
+    const details = document.createElement('div');
+    details.className = 'pc-desc';
+    details.textContent = p.id === 'us' ? '太平洋时间 · 英语' : '台北时间 · 繁体中文';
+    const content = document.createElement('span');
+    content.className = 'pc-main';
+    content.append(name, details);
+    const selected = document.createElement('span');
+    selected.className = 'pc-selected';
+    selected.textContent = p.id === current ? '已选择' : '选择';
+    card.append(content, selected);
     card.addEventListener('click', () => {
       const chosen = personas.find((x) => x.id === p.id) || personas[0];
       // tz / lang 不落盘：由主进程按 persona 派生，存两份就会分叉
       cfg = { ...cfg, persona: chosen.id, _persona: chosen.id };
       renderPersonas();
       updateSbPersona();
-      $('personaHint').textContent = `已选「${chosen.name}」：${chosen.label}。`;
-      window.api.saveConfig(gather());
+      save();
       if (running) setHint('画像已改，点「停止」再「启动」生效', 'warn');
     });
     box.appendChild(card);
   }
-  const cur = personas.find((p) => p.id === current) || personas[0];
-  $('personaHint').textContent = cur ? `当前：${cur.label}。` : '';
   updateSbPersona();
 }
 
 // ---------- 节点列表 ----------
 function nodeHintText() {
   const cur = $('selectedNode').value;
-  let s = `共 ${nodes.length} 个节点；全部流量走选中的「${cur}」。`;
+  let s = `共 ${nodes.length} 个节点`;
   if (Object.prototype.hasOwnProperty.call(nodeDelays, cur)) {
     const ms = nodeDelays[cur];
-    s += typeof ms === 'number' ? ` 实测延迟 ${ms}ms。` : ' 该节点超时或不可达。';
+    if (typeof ms !== 'number') s += ' · 所选节点超时或不可达';
   }
   return s;
 }
@@ -148,6 +145,11 @@ function nodeHintText() {
 async function testLatency() {
   const btn = $('testLatency');
   if (!btn || btn.disabled || !window.api.nodeLatency) return;
+  if (!running) {
+    $('nodeHint').textContent = '启动虚拟环境后即可测试延迟。';
+    $('nodeHint').className = 'hint';
+    return;
+  }
   btn.disabled = true;
   const old = btn.textContent;
   setLabel(btn, '测试中…');
@@ -157,7 +159,7 @@ async function testLatency() {
     nodeDelays = (r && r.ok && r.delays) ? r.delays : {};
     if (!r || !r.ok) {
       renderNodes(nodes, $('selectedNode').value);
-      $('nodeHint').textContent = `延迟测试失败：${(r && r.error) || '内核未就绪'}。先启动环境再测。`;
+      $('nodeHint').textContent = `延迟测试失败：${(r && r.error) || '内核未就绪'}`;
       $('nodeHint').className = 'hint err';
       updateLatency(null);
       return;
@@ -168,9 +170,12 @@ async function testLatency() {
     $('nodeHint').textContent = `${nodeHintText()} 已测 ${okCount}/${nodes.length} 个可达。`;
     $('nodeHint').className = 'hint';
     updateLatency(nodeDelays[keep]);
+  } catch (error) {
+    $('nodeHint').textContent = `延迟测试失败：${error.message || '请稍后重试'}`;
+    $('nodeHint').className = 'hint err';
   } finally {
     btn.disabled = false;
-    setLabel(btn, old && old.indexOf('测') >= 0 ? old : '重新测试');
+    setLabel(btn, old && old.indexOf('测') >= 0 ? old : '测试延迟');
   }
 }
 
@@ -178,12 +183,19 @@ function renderNodes(list, preferred) {
   nodes = Array.isArray(list) ? list : [];
   const sel = $('selectedNode');
   sel.innerHTML = '';
+  const listEl = $('nodeList');
+  $('nodeHint').className = 'hint';
+  listEl.innerHTML = '';
+  listEl.hidden = true;
+  $('nodePicker').setAttribute('aria-expanded', 'false');
+  $('nodePicker').disabled = !nodes.length;
   if (!nodes.length) {
     const o = document.createElement('option');
     o.value = '';
     o.textContent = '（先导入 YAML）';
     sel.appendChild(o);
     sel.disabled = true;
+    $('nodePickerLabel').textContent = '请先选择配置文件';
     $('nodeHint').textContent = '尚未导入节点。';
     return;
   }
@@ -194,26 +206,44 @@ function renderNodes(list, preferred) {
     const bits = [n.name];
     if (n.type) bits.push(n.type);
     if (n.server) bits.push(n.server);
-    if (Object.prototype.hasOwnProperty.call(nodeDelays, n.name)) {
-      const ms = nodeDelays[n.name];
-      bits.push(typeof ms === 'number' ? `${ms}ms` : '超时');
-    }
     o.textContent = bits.join(' · ');
     sel.appendChild(o);
   }
   const want = preferred || cfg.selectedNode || '';
   sel.value = nodes.some((n) => n.name === want) ? want : nodes[0].name;
   cfg.selectedNode = sel.value;
+  $('nodePickerLabel').textContent = sel.selectedOptions[0].textContent;
+  for (const n of nodes) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'node-option' + (n.name === sel.value ? ' active' : '');
+    const name = document.createElement('span');
+    name.className = 'node-option-name';
+    name.textContent = n.name;
+    const detail = document.createElement('span');
+    detail.className = 'node-option-delay';
+    const delay = nodeDelays[n.name];
+    detail.textContent = Object.prototype.hasOwnProperty.call(nodeDelays, n.name)
+      ? (typeof delay === 'number' ? `${delay} ms` : '超时') : '';
+    button.append(name, detail);
+    button.addEventListener('click', () => {
+      sel.value = n.name;
+      sel.dispatchEvent(new Event('change'));
+      renderNodes(nodes, n.name);
+      $('nodePicker').focus();
+    });
+    listEl.appendChild(button);
+  }
   $('nodeHint').textContent = nodeHintText();
 }
 
 function renderYamlHint() {
   const p = $('clashYamlPath').value.trim();
   if (!p) {
-    $('yamlHint').textContent = '未导入配置时无法启动 —— 没有出口就不要放行网络。';
+    $('yamlHint').textContent = '请选择配置文件。';
     $('yamlHint').className = 'hint err';
   } else {
-    $('yamlHint').textContent = '每次启动自动读取该文件最新内容；改完订阅点一次「停止 → 启动」。';
+    $('yamlHint').textContent = '启动时读取文件的最新内容。';
     $('yamlHint').className = 'hint';
   }
 }
@@ -231,8 +261,6 @@ async function refreshNodes(preferred) {
 function fill(c) {
   $('clashYamlPath').value = c.clashYamlPath || '';
   $('workspace').value = c.workspace || '';
-  $('netGuard').value = c.netGuard === 'off' ? 'off' : 'strict';
-  $('inputMethod').value = c.inputMethod === 'rime' ? 'rime' : 'off';
   $('strictRegion').checked = c.netGuardStrictRegion !== false;
   personas = Array.isArray(c._personas) ? c._personas : [];
   renderPersonas();
@@ -258,14 +286,10 @@ function clearEgress() {
 // ---------- 网络守卫状态（状态栏 + 设置弹窗里的锁定条） ----------
 function updateSbGuard(g) {
   const el = $('sbGuard');
-  const notice = $('lockNotice');
-  const span = notice.querySelector('span');
   if (!g || !g.state) {
     setLabel(el, '网络未锁定');
     el.className = 'sb-metric';
     el.title = '尚未启动或守卫无状态';
-    if (span) span.textContent = '已启用：容器网络经 Mihomo + TUN 出网，阻断直连与旁路。';
-    notice.className = 'notice green';
     return;
   }
   let kind = 'warn';
@@ -292,8 +316,6 @@ function updateSbGuard(g) {
   setLabel(el, label);
   el.className = 'sb-metric ' + (kind === 'ok' ? 'ok' : kind === 'err' ? 'err' : 'warn');
   el.title = g.message || label;
-  if (span) span.textContent = label;
-  notice.className = 'notice ' + (kind === 'ok' ? 'green' : 'orange');
 }
 
 function showGuard(g) { updateSbGuard(g); }
@@ -304,12 +326,19 @@ function openOverlay(id) { $(id).hidden = false; }
 function closeOverlay(id) { $(id).hidden = true; }
 
 function switchTab(tab) {
+  if ($('settingsHint').classList.contains('ok')) setHint('', '');
   document.querySelectorAll('#settingsNav [data-tab]').forEach((b) => {
     b.classList.toggle('active', b.dataset.tab === tab);
   });
   document.querySelectorAll('.modal-content .tab-panel').forEach((p) => {
     p.classList.toggle('active', p.dataset.panel === tab);
   });
+  document.querySelector('.modal-content').scrollTop = 0;
+}
+
+function openEnvironmentCheck() {
+  switchTab('check');
+  openOverlay('settingsOverlay');
 }
 
 function focusStage() {
@@ -520,8 +549,6 @@ if (!window.api) {
     closeOverlay('settingsOverlay');
     focusStage();
   });
-  // 环境检查：本轮仍走独立报告窗口，浮层留到下一轮做
-  $('check').addEventListener('click', () => window.api.openReport());
 
   // ---- 无边框窗口控制 ----
   $('winMin').addEventListener('click', () => window.api.winMinimize());
@@ -554,31 +581,40 @@ if (!window.api) {
     const b = e.target.closest('[data-tab]');
     if (b) switchTab(b.dataset.tab);
   });
-  $('settingsSave').addEventListener('click', () => {
-    save();
-    closeOverlay('settingsOverlay');
-    setHint('设置已保存；改动在下次「启动」时生效', 'ok');
-  });
 
   // 桌面快捷启动器 / 任务项 / 时钟都由 VM 内的 tint2 面板提供，宿主不代劳。
-  $('sbGuard').addEventListener('click', () => window.api.openReport());
+  $('sbGuard').addEventListener('click', openEnvironmentCheck);
 
   // ---- 表单 ----
   $('clashYamlPath').addEventListener('change', () => { save(); renderYamlHint(); refreshNodes(); });
-  $('workspace').addEventListener('change', () => save());
+  $('workspace').addEventListener('change', () => {
+    save();
+    if (running) setHint('工作区已更改，停止后重新启动生效', 'warn');
+  });
   $('selectedNode').addEventListener('change', () => {
     save();
     $('nodeHint').textContent = nodeHintText();
     updateLatency(nodeDelays[$('selectedNode').value]);
     if (running) setHint('节点已改，点「停止」再「启动」生效', 'warn');
   });
-  $('netGuard').addEventListener('change', () => {
-    save();
-    if (running) setHint('网络熔断已改，点「停止」再「启动」生效', 'warn');
+  $('nodePicker').addEventListener('click', () => {
+    const list = $('nodeList');
+    list.hidden = !list.hidden;
+    $('nodePicker').setAttribute('aria-expanded', String(!list.hidden));
   });
-  $('inputMethod').addEventListener('change', () => {
-    save();
-    if (running) setHint('输入法已改，点「停止」再「启动」生效', 'warn');
+  document.addEventListener('click', (event) => {
+    if (!event.target.closest('.node-picker')) {
+      $('nodeList').hidden = true;
+      $('nodePicker').setAttribute('aria-expanded', 'false');
+    }
+  });
+  $('nodeList').addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
+      event.stopPropagation();
+      $('nodeList').hidden = true;
+      $('nodePicker').setAttribute('aria-expanded', 'false');
+      $('nodePicker').focus();
+    }
   });
   $('strictRegion').addEventListener('change', () => {
     save();
@@ -608,14 +644,18 @@ if (!window.api) {
 
   $('pick').addEventListener('click', async () => {
     const p = await window.api.pickWorkspace();
-    if (p) { $('workspace').value = p; save(); }
+    if (p) {
+      $('workspace').value = p;
+      save();
+      if (running) setHint('工作区已更改，停止后重新启动生效', 'warn');
+    }
   });
   $('openWs').addEventListener('click', () => window.api.openWorkspace($('workspace').value));
 
   $('advStart').addEventListener('click', doStart);
   $('advStop').addEventListener('click', doStop);
   $('reset').addEventListener('click', doReset);
-  $('settingsHint').addEventListener('click', () => window.api.openReport());
+  $('settingsHint').addEventListener('click', openEnvironmentCheck);
   $('diag').addEventListener('click', doExportDiag);
   $('diagOpen').addEventListener('click', () => window.api.openLogs());
 

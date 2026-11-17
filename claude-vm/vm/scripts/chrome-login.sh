@@ -39,9 +39,9 @@ if [ -d "$CHROME_PROFILE" ] && ! pgrep -f '[g]oogle-chrome-stable' >/dev/null 2>
         "$CHROME_PROFILE/SingletonSocket" 2>/dev/null || true
 fi
 
-# 不带参数时直接打开登录页，省得用户自己敲网址
+# 从桌面打开浏览器时展示常用页面；显式传入的链接用于登录等外部调用。
 if [ "$#" -eq 0 ]; then
-  set -- https://claude.ai/login
+  set -- https://ip.net.coffee/claude/ https://claude.ai/
 fi
 
 exec google-chrome-stable \

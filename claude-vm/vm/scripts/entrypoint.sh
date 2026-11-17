@@ -219,6 +219,20 @@ fi
 mkdir -p ~/.config/openbox ~/.config/tint2 ~/.config/gtk-3.0 \
          ~/.local/share/applications /opt/icons /opt/wall /usr/share/themes
 
+# 让桌面应用通过 xdg-open 打开 URL 时也走同一个 Chrome 启动器。
+cat > ~/.local/share/applications/claude-vm-browser.desktop <<'BROWSER_DESKTOP'
+[Desktop Entry]
+Type=Application
+Name=Chrome
+Exec=/opt/scripts/chrome-login.sh %U
+Terminal=false
+Categories=Network;WebBrowser;
+MimeType=x-scheme-handler/http;x-scheme-handler/https;text/html;
+BROWSER_DESKTOP
+if command -v xdg-mime >/dev/null 2>&1; then
+  xdg-mime default claude-vm-browser.desktop x-scheme-handler/http x-scheme-handler/https text/html >/dev/null 2>&1 || true
+fi
+
 # 3.1) 启动器：面板上的四个图标 + 桌面右键菜单
 cp -f /opt/config/apps/*.desktop ~/.local/share/applications/ 2>/dev/null || true
 cp -f /opt/config/apps/*.desktop /usr/share/applications/ 2>/dev/null || true
@@ -270,7 +284,12 @@ NOVNC_INDEX
 
 # 3.1.2) 窗口主题（旧镜像里没有，运行时补上，省得重建 rootfs）
 mkdir -p /usr/share/themes/Claude/openbox-3
-cp -f /opt/config/themes/Claude/openbox-3/themerc /usr/share/themes/Claude/openbox-3/themerc 2>/dev/null || true
+_theme=/opt/assets/config/themes/Claude/openbox-3/themerc
+[ -f "$_theme" ] || _theme=/opt/config/themes/Claude/openbox-3/themerc
+cp -f "$_theme" /usr/share/themes/Claude/openbox-3/themerc 2>/dev/null || true
+_theme_dir=/opt/assets/config/themes/Claude/openbox-3
+[ -d "$_theme_dir" ] || _theme_dir=/opt/config/themes/Claude/openbox-3
+cp -f "$_theme_dir"/*.xbm /usr/share/themes/Claude/openbox-3/ 2>/dev/null || true
 
 # 3.2) 图标与壁纸（自绘 PNG：Fira Code 字形 + 品牌橙，避免方块感强的位图图标）
 node /opt/scripts/gen-art.js icons /opt/icons 64 >/dev/null 2>&1 || true
@@ -290,9 +309,23 @@ cat > ~/.gtkrc-2.0 <<'GTK2'
 gtk-theme-name="Adwaita-dark"
 gtk-icon-theme-name="Adwaita"
 gtk-font-name="DejaVu Sans 10"
-style "default" { fg[NORMAL] = "#e6eaf2" fg[PRELIGHT] = "#ffffff" bg[NORMAL] = "#151b24" base[NORMAL] = "#10141b" text[NORMAL] = "#e6eaf2" }
+style "default" {
+  fg[NORMAL] = "#e6eaf2"
+  fg[PRELIGHT] = "#ffffff"
+  bg[NORMAL] = "#20202c"
+  bg[PRELIGHT] = "#37313a"
+  bg[SELECTED] = "#f0825a"
+  base[NORMAL] = "#14141f"
+  text[NORMAL] = "#e6eaf2"
+}
 class "GtkWidget" style "default"
 GTK2
+cat > ~/.config/gtk-3.0/gtk.css <<'GTKCSS'
+menubar, .menubar { background: #20202c; color: #e6eaf2; }
+menubar > menuitem:hover, .menubar > menuitem:hover { background: #37313a; }
+scrollbar slider { min-width: 8px; min-height: 8px; border-radius: 6px; background: #55515d; }
+scrollbar slider:hover { background: #f0825a; }
+GTKCSS
 
 # 3.4) 终端提示符：去掉 user@host（那是最像服务器的记号）
 if ! grep -q 'bashrc.extra' ~/.bashrc 2>/dev/null; then
@@ -454,6 +487,7 @@ fi
   # 画像派生的浏览器语言：chrome-login.sh / chrome-lang.py / 自检都读它
   echo "export CHROME_LANG='${CHROME_LANG:-}'"
   echo "export DISPLAY='${DISPLAY}'"
+  echo "export BROWSER='/opt/scripts/chrome-login.sh'"
   echo "export XDG_RUNTIME_DIR='${XDG_RUNTIME_DIR:-}'"
   echo "export DBUS_SESSION_BUS_ADDRESS='${DBUS_SESSION_BUS_ADDRESS:-}'"
   echo "export DISPLAY_MODE='${DISPLAY_MODE}'"

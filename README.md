@@ -6,7 +6,7 @@
 
 <img src="claude-desktop/app/renderer/assets/app-icon.svg" alt="ClaudeVM" width="128" />
 
-[![Version](https://img.shields.io/badge/version-2.0.3-orange)](https://github.com/KeithMorning/ClaudeVM/releases) [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS-lightgrey)](#构建桌面端) [![Tests](https://img.shields.io/badge/tests-143%20passing-brightgreen)](tests/README.md) [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+[![Version](https://img.shields.io/badge/version-2.1.0-orange)](https://github.com/KeithMorning/ClaudeVM/releases) [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS-lightgrey)](#构建桌面端) [![Tests](https://img.shields.io/badge/tests-143%20passing-brightgreen)](tests/README.md) [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
 **[构建与安装](#构建桌面端) · [运行时镜像](#运行时镜像) · [技术文档](doc/index.md) · [测试体系](tests/README.md)**
 

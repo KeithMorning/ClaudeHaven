@@ -64,6 +64,19 @@ window.__rfbState = () => (rfb ? (rfb._rfb_connection_state || 'unknown') : 'non
 
 const focusStage = () => { const c = stage.querySelector('canvas'); if (c) c.focus(); };
 
+// The bundled noVNC listens for window resize events. Observe the actual
+// viewport as well, since the Electron webview can change size independently.
+let viewportWidth = 0;
+let viewportHeight = 0;
+const viewportObserver = new ResizeObserver((entries) => {
+  const { width, height } = entries[0].contentRect;
+  if (!width || !height || (width === viewportWidth && height === viewportHeight)) return;
+  viewportWidth = width;
+  viewportHeight = height;
+  window.dispatchEvent(new Event('resize'));
+});
+viewportObserver.observe(stage);
+
 function say(text) {
   hintText.textContent = text;
   hint.classList.remove('gone');

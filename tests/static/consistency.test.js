@@ -496,7 +496,7 @@ test('2.0：Clash YAML 用 base64 分块注入，不把原文拼进 shell', () =
 
 test('2.0：界面接线（画像卡片 / 节点选择 / YAML 导入 / 报告按钮）', () => {
   const html = readRel('claude-desktop/app/renderer/index.html');
-  for (const id of ['personaCards', 'clashYamlPath', 'selectedNode', 'refreshNodes', 'check', 'reset']) {
+  for (const id of ['personaCards', 'clashYamlPath', 'selectedNode', 'refreshNodes', 'cpRerun', 'reset']) {
     assert.match(html, new RegExp(`id="${id}"`), `界面缺少 ${id}`);
   }
   for (const legacy of ['id="proxy"', 'id="proxyMode"', 'id="whitelist"', 'id="tunMode"',
@@ -506,7 +506,7 @@ test('2.0：界面接线（画像卡片 / 节点选择 / YAML 导入 / 报告按
   const js = readRel('claude-desktop/app/renderer/renderer.js');
   assert.match(js, /renderPersonas/, '画像卡片渲染');
   assert.match(js, /renderNodes/, '节点下拉渲染');
-  assert.match(js, /window\.api\.openReport\(\)/, '检查报告走独立窗口');
+  assert.match(js, /openEnvironmentCheck/, '检查报告接入设置');
   assert.ok(!js.includes('openPanel') && !js.includes('renderCheck'),
     '主窗口不再渲染自检遮罩面板');
   const pre = readRel('claude-desktop/app/preload.js');
@@ -554,9 +554,9 @@ test('坑 22：TUN 就绪必须等显式 ready 标记，不能只看网卡出现
 
 test('2.0：版本号与 RUNTIME_REV 已同步升级', () => {
   const pkg = JSON.parse(readRel('claude-desktop/package.json'));
-  assert.strictEqual(pkg.version, '2.0.3', '2.0.0 坑 23、2.0.1 坑 24、2.0.2 画像/语言问题，修复包必须换号');
+  assert.strictEqual(pkg.version, '2.1.0', '2.1 主界面改版 + App Icon 是功能版本，2.0.x 全是修复包');
   // 画像 id 没变（us），但时区从纽约改成了洛杉矶；不 bump REV 会 resume 旧会话继续用美东时间
-  assert.match(MAIN_SRC, /const RUNTIME_REV = 14;/);
+  assert.match(MAIN_SRC, /const RUNTIME_REV = 19;/);
 });
 
 // ---------- 坑 23：wsl.exe 吞 $ 导致脚本同步假绿 ----------
@@ -714,12 +714,12 @@ test('2.1：主界面骨架（顶栏 / 舞台 / 单行状态信息栏 / 设置�
   const html = readRel('claude-desktop/app/renderer/index.html');
   for (const id of ['runBadge', 'powerBtn', 'navSettings', 'winMin', 'winMax', 'winClose',
                     'stage', 'phStart', 'view', 'settingsOverlay', 'settingsNav',
-                    'settingsSave', 'sbPersona', 'sbLatency', 'sbGuard', 'sbItems']) {
+                    'settingsHint', 'sbPersona', 'sbLatency', 'sbGuard', 'sbItems']) {
     assert.match(html, new RegExp(`id="${id}"`), `主界面缺少 ${id}`);
   }
-  assert.strictEqual([...html.matchAll(/\bdata-tab="([^"]+)"/g)].length, 4,
-    '设置弹窗要有 4 个 tab 导航');
-  assert.strictEqual([...html.matchAll(/\bdata-panel="([^"]+)"/g)].length, 4,
+  assert.strictEqual([...html.matchAll(/\bdata-tab="([^"]+)"/g)].length, 5,
+    '设置弹窗要有 5 个 tab 导航');
+  assert.strictEqual([...html.matchAll(/\bdata-panel="([^"]+)"/g)].length, 5,
     '设置弹窗要有 4 个内容面板');
   assert.match(html, /wave-bg|stage-waves/, '串流舞台要有波浪背景');
   assert.strictEqual([...html.matchAll(/class="sb-row/g)].length, 1,
@@ -831,10 +831,9 @@ test('App Icon：SVG 真源、PNG 导出与三处接线齐全', () => {
     'app-icon.svg / .png 必须随 asar 打包');
 });
 
-test('2.1：本轮只做主界面，环境检查浮层留到下一轮', () => {
+test('环境检查入口位于设置中', () => {
   const js = readRel('claude-desktop/app/renderer/renderer.js');
-  assert.match(js, /\$\('check'\)\.addEventListener\('click', \(\) => window\.api\.openReport\(\)\)/,
-    '顶栏「环境检查」暂走独立报告窗口');
+  assert.match(js, /switchTab\('check'\)/, '状态栏可以打开设置中的环境检查');
   assert.ok(!js.includes("openOverlay('checkOverlay')"),
     '检查浮层本轮不接线（下一轮做环境检查时请同步更新这条断言）');
   const html = readRel('claude-desktop/app/renderer/report.html');

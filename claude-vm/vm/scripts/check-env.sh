@@ -324,24 +324,28 @@ _s2=$(curl -s --max-time 8 https://ipinfo.io/ip 2>/dev/null | tr -d '[:space:]')
 _s3=$(curl -s --max-time 8 https://api.ip.sb/ip 2>/dev/null | tr -d '[:space:]')
 _uniq=$(printf '%s\n%s\n%s\n' "$_s1" "$_s2" "$_s3" | grep -E '^[0-9a-fA-F:.]{7,}$' | sort -u | tr '\n' ' ')
 _n=$(printf '%s' "$_uniq" | wc -w | tr -d ' ')
+_responded=$(printf '%s\n%s\n%s\n' "$_s1" "$_s2" "$_s3" | grep -Ec '^[0-9a-fA-F:.]{7,}$' || true)
 if [ "${_n:-0}" -eq 0 ]; then
   add network warn "多源出口一致性" "无法验证" \
     "三个 IP 情报源都没有返回地址，内核或选中节点此刻不可用。" \
     "检查节点是否可达、mihomo 日志是否有连接错误。"
+elif [ "$_n" -eq 1 ] && [ "$_responded" -ge 2 ]; then
+  add network pass "多源出口一致性" "${_responded}/3 个来源一致 · ${_uniq% }" \
+    "成功返回的检测源给出了相同的出口地址。" ""
 elif [ "$_n" -eq 1 ]; then
-  add network pass "多源出口一致性" "三源一致 → ${_uniq% }" \
-    "ipify / ipinfo / ip.sb 在同一时刻给出同一个出口，说明没有分叉。" ""
+  add network warn "多源出口一致性" "仅 1/3 个来源返回" \
+    "只有一个检测源返回地址，无法比较不同来源。" "稍后重新检测。"
 else
   add network fail "多源出口一致性" "出现 ${_n} 个出口：${_uniq% }" \
-    "不同网站看到的出口 IP 不一致，说明分流规则没被忽略、或节点链路异常。" \
-    "确认 YAML 已被 tun-merge.py 改成全量单节点。"
+    "检测源返回了不同的出口地址，可能与节点链路或路由有关。" \
+    "检查节点配置与线路后重新检测。"
 fi
 
 # 直连封锁：显式绕过应用层代理，包仍会被 TUN 抓走，所以这里只作参考；
 # 真正的 fail-closed 证据是「main 表没有默认路由」，见下一节的 netlink 查询。
 if curl -s --max-time 4 --noproxy '*' https://ipinfo.io/ip >/dev/null 2>&1; then
   add network pass "出口可达性" "裸 curl 可出网" \
-    "应用不需要任何显式代理配置，流量由 TUN 在网络层接管。" ""
+    "请求未使用应用层代理并取得响应。此结果本身无法判断流量是否绕过 TUN。" ""
 else
   add network warn "出口可达性" "裸 curl 无回包" \
     "内核可能没起来、节点不可达，或熔断正处于预检未通过状态。" \
@@ -352,7 +356,7 @@ fi
 _code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 https://api.anthropic.com 2>/dev/null)
 if [ -n "$_code" ] && [ "$_code" != "000" ]; then
   add network pass "Anthropic 可达" "HTTP $_code" \
-    "经容器内内核访问 api.anthropic.com 成功，链路完整。" ""
+    "api.anthropic.com 返回了 HTTP 状态码；这只说明收到了响应。" ""
 else
   add network fail "Anthropic 可达" "无响应" \
     "Claude Code 会直接不可用。检查选中的节点是否可达、出口是否落在受限地区。" \
@@ -426,26 +430,21 @@ _locked=$(printf '%s' "$_RS" | sed -n 's/.*"locked": *\([a-z]*\).*/\1/p')
 _v6off=$(printf '%s' "$_RS" | sed -n 's/.*"ipv6_disabled": *\([a-z]*\).*/\1/p')
 if [ "$_locked" = "true" ] && [ "$_v6off" = "true" ]; then
   add network pass "直连封锁验证" "IPv4 默认路由已移除 · IPv6 已关闭" \
-    "内核路由表里没有直连出口；只封 IPv4 而漏掉 IPv6 是最常见的泄漏口，这里一并堵住。" ""
+    "已检查 IPv4 主路由表的默认路由和 IPv6 开关；这不是内核退出后的断网实测。" ""
+elif [ -z "$_locked" ] || [ -z "$_v6off" ]; then
+  add network warn "直连封锁验证" "无法读取路由状态" \
+    "没有取得完整的路由和 IPv6 状态，无法确认熔断条件。" \
+    "检查虚拟环境中的 net-guard.py 是否可运行。"
 else
   add network fail "直连封锁验证" "IPv4 locked=${_locked:-未知} / IPv6 off=${_v6off:-未知}" \
     "网络层没有完全封锁，内核退出时流量可能从直连或 IPv6 出网。" \
     "点「停止」再「启动」让 net-guard 重新熔断；反复失败请确认以 root 运行、CAP_NET_ADMIN 未被禁用。"
 fi
 
-if curl -s --max-time 4 --noproxy '*' https://ipinfo.io/ip >/dev/null 2>&1; then
-  add network fail "直连泄漏实测" "仍可出网（高危）" \
-    "绕过应用层代理后依然能出网；TUN 模式下这是正常的（流量被网卡抓走），需结合 main 表默认路由判断。" \
-    "立即停止使用并重启虚拟环境；确认 NET_GUARD=strict 且 net-guard 正在运行。"
-else
-  add network pass "直连泄漏实测" "已阻断" \
-    "内核未接管时裸请求无法出网，链路是真正的 fail-closed。" ""
-fi
-
 case "$_GUARD_REASON" in
   ok)
     add network pass "代理预检" "通过 · 出口 $([ -f "$_GS" ] && _kv exit_ip || echo 未知)/$([ -f "$_GS" ] && _kv exit_country || echo 未知)" \
-      "内核与 TUN 网卡存活、出口地区安全、多源出口一致、Anthropic 可达，预检通过后网络才允许使用。" "" ;;
+      "守卫记录的最近一次预检已通过；当前状态请结合路由与心跳检查。" "" ;;
   skipped|unknown|"")
     add network info "代理预检" "未执行" \
       "熔断关闭或守卫尚未运行时没有预检结果，此时无法保证代理配置正确。" "" ;;
@@ -463,7 +462,7 @@ if [ -f "$_GS" ] && [ -n "$_GUARD_TS" ] && [ "$_GUARD_STATE" != "off" ]; then
       "点「停止」再「启动」重建会话。"
   else
     add network pass "守卫心跳" "正常（${_age} 秒前刷新）" \
-      "看门狗在持续确认默认路由没有被 WSL 重新加回来、内核与 TUN 网卡仍在。" ""
+      "守卫状态文件最近一次刷新距今 ${_age} 秒。" ""
   fi
 fi
 fi
@@ -472,7 +471,10 @@ fi
 # 2.5) 中文输入法（可选，仅 INPUT_METHOD=rime 时要求 fcitx5 正常）
 # ------------------------------------------------------------
 _IM="${INPUT_METHOD:-off}"
-if [ "$_IM" != "rime" ]; then
+if [ "$RUNTIME_UP" != "1" ]; then
+  add desktop info "中文输入法" "环境未运行" \
+    "启动虚拟环境后才能检查输入法服务。" ""
+elif [ "$_IM" != "rime" ]; then
   add desktop info "中文输入法" "未启用" \
     "串流桌面里中文可用宿主输入法打好后 Ctrl+Shift+V 粘贴，或启用 fcitx5 在虚拟环境内直接输入。" ""
 elif ! ls /usr/lib/*/gtk-3.0/*/immodules/im-fcitx5.so >/dev/null 2>&1; then
@@ -525,18 +527,16 @@ fi
 HOSTING_RE='Amazon|Google|Microsoft|Cloudflare|Vultr|Constant Company|Choopa|DigitalOcean|Linode|Hetzner|OVH|Contabo|Tencent|Alibaba|Aliyun|Oracle|Akamai|Leaseweb|M247|Hostinger|Scaleway|UpCloud|ColoCrossing|FranTech|BuyVM|Psychz|Quadranet|Cogent|SoftLayer|Rackspace|Kamatera|Ionos|Gcore|Clouvider|DataCamp|Zenlayer|UCloud|Huawei'
 if [ -n "$_eorg" ]; then
   if printf '%s' "$_eorg" | grep -qiE "$HOSTING_RE"; then
-    add network warn "出口类型" "机房 IP（IDC / 云主机）" \
-      "这是选中的节点本身的属性，不是本地环境的问题。Anthropic 与 Cloudflare 会把机房 IP 视为非家庭网络。" \
-      "想换掉只能改用住宅/ISP 节点；在此之前保持画像内部自洽即可。"
+    add network info "出口网络组织" "$_eorg" \
+      "组织名称匹配已知服务商名单；仅凭名称无法确定 IP 的用途或服务商的判定。" ""
   else
     # 名字不在名单里不等于「家庭宽带」：NTT / Cogent 这类骨干与托管商的段，
     # 检测站照样按 IP 段判数据中心（实测 NTT America 就是 +13）。
     # 所以这里只陈述事实，不替对方下结论。
     # 名字不在名单里 ≠ 家庭宽带：NTT / Cogent 这类骨干与托管商的段，检测站照样按 IP 段
     # 判数据中心（实测 AS2914 NTT America 就是 +13 分）。旧版给 pass 是虚假安心。
-    add network warn "出口类型" "骨干/托管网段（$_eorg）" \
-      "组织名不在已知机房名单里，但检测站按 IP 段判数据中心：41 分里的 13 分就来自这里。这是商业 VPN 节点的固有属性，不是本地配置错误。" \
-      "只有换住宅/ISP 节点才能去掉；不要为它改时区或语言，那会制造真正的不一致。"
+    add network info "出口网络组织" "$_eorg" \
+      "这是 IP 信息服务返回的网络组织名称，无法单独确定出口类型。" ""
   fi
 fi
 
@@ -577,9 +577,9 @@ if [ -n "${_eip:-}" ] && [ "$CORE_UP" = "1" ]; then
       0) _pd="本轮本地三源都没返回地址" ;;
       *) _pd="本轮本地三源出现分叉：${_uniq% }" ;;
     esac
-    add network info "checkcc 口径" "${CC_TOTAL} 分" \
-      "服务端可观测 ${CC_SERVER} 分，加上浏览器侧 claude.ai 跨域探活 ${CC_BROWSER} 分，合计 ${CC_TOTAL} 分 —— 与检测站在浏览器里给出的百分比同源同算法。其中「多源 IP 情报（15）」「DNS 两项（5+2）」是它服务端自己去问那几个源得出的结论：${_pd}。" \
-      "这 22 分本地无解（它查询时没带上客户端 IP，量到的是自己的 Cloudflare 出口）；剩下的是机房 IP 属性与 CF 挑战，只能换住宅节点。"
+    add network info "checkcc 估算" "${CC_TOTAL} 分（估算）" \
+      "根据接口字段和本地规则估算。浏览器实际检测涉及更多信息，结果可能不同。" \
+      "如需核对，请在浏览器中运行检测。"
   else
     add network info "checkcc 口径" "未能取分" \
       "拿到了接口返回，但没能读出评分字段（它的字段名是混淆的，可能已改版）。" \
@@ -614,14 +614,14 @@ esac
 
 if [ -n "$_ecc" ]; then
   add consistency info "时区 ↔ 出口地区" "系统 ${TZ:-未知} / 出口 ${_ecc}" \
-    "两者分属不同地区不构成信号矛盾：挂 VPN 出境是当地用户日常；检测站判的是被点名的中国时区，不是地理匹配。不要为了「对齐」去改系统时区，那反而会制造真正的不一致。" ""
+    "分别显示系统时区和检测到的出口地区。此项不对两者作风险判断。" ""
 fi
 
 # 全量单节点：确认订阅的分流规则已被忽略
 if [ "$CORE_UP" = "1" ] && [ -f /opt/config/mihomo.yaml ]; then
   if grep -q 'MATCH,ClaudeVM' /opt/config/mihomo.yaml; then
     add consistency pass "出口规则" "全量单节点 → ${TUN_NODE:-自动}" \
-      "订阅原有的 proxy-groups / rules 已被剥离，所有流量走选中的单一节点，不存在登录与 API 出口分叉。" ""
+      "配置文件中存在单节点兜底规则；实际出口请结合多源检测结果查看。" ""
   else
     add consistency warn "出口规则" "未检测到单节点兜底规则" \
       "生成的内核配置里没有 MATCH,ClaudeVM，订阅的分流规则可能仍在生效。" \

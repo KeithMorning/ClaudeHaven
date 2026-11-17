@@ -1,4 +1,5 @@
 'use strict';
+(() => {
 // 独立「环境检查报告」窗口的渲染层。
 // 与主窗口完全解耦：这里不碰 webview / 不碰桌面，检测过程只是一次只读的
 // check-env.sh 调用，所以报告开着的时候桌面照常可用。
@@ -20,11 +21,12 @@ function panelMessage(text, isError) {
   $('cpBody').appendChild(d);
 }
 
-function renderVerdict(summary, cc) {
+function renderVerdict(summary, cc, runtimeUp) {
   const { pass, warn, fail } = summary;
   const v = $('cpVerdict');
   let kind = 'ok', text = '全部通过，各维度指向同一环境';
-  if (fail > 0) { kind = 'err'; text = `发现 ${fail} 项必须修复，修好再登录 Claude`; }
+  if (!runtimeUp) { kind = 'warn'; text = '环境未运行，检查结果不完整'; }
+  else if (fail > 0) { kind = 'err'; text = `发现 ${fail} 项检查失败`; }
   else if (warn > 0) { kind = 'warn'; text = `环境可用，但有 ${warn} 项需要留意`; }
   v.className = 'cp-verdict ' + kind;
 
@@ -44,8 +46,8 @@ function renderVerdict(summary, cc) {
   if (cc && cc.total > 0) {
     const p = document.createElement('span');
     p.className = 'pill cc';
-    p.textContent = `检测站口径 ${cc.total} 分`;
-    p.title = `服务端可观测 ${cc.serverSide} 分 + 浏览器侧探活 ${cc.browserSide} 分`;
+    p.textContent = `checkcc 估算 ${cc.total} 分`;
+    p.title = '基于接口和本地规则估算，浏览器实际结果可能不同';
     pills.appendChild(p);
   }
   v.append(label, pills);
@@ -69,17 +71,25 @@ function renderItem(it) {
   val.textContent = it.value || '';
   top.append(lb, val);
   body.appendChild(top);
-  if (it.detail) {
+  if (it.detail || it.advice) {
+    const more = document.createElement('details');
+    more.className = 'ci-more';
+    const summary = document.createElement('summary');
+    summary.textContent = '查看详情';
+    more.appendChild(summary);
+    if (it.detail) {
     const det = document.createElement('div');
     det.className = 'ci-detail';
     det.textContent = it.detail;
-    body.appendChild(det);
-  }
-  if (it.advice) {
+    more.appendChild(det);
+    }
+    if (it.advice) {
     const adv = document.createElement('div');
     adv.className = 'ci-advice';
     adv.textContent = it.advice;
-    body.appendChild(adv);
+    more.appendChild(adv);
+    }
+    body.appendChild(more);
   }
   row.append(mark, body);
   return row;
@@ -164,7 +174,7 @@ function buildExportHtml() {
     ['pass', 'warn', 'fail', 'info'].forEach((k) => {
       if (s[k]) rows.push(`<span class="pill ${k}">${STATUS_LABEL[k]} ${s[k]}</span>`);
     });
-    if (d.checkcc && d.checkcc.total > 0) rows.push(`<span class="pill cc">检测站口径 ${d.checkcc.total} 分</span>`);
+    if (d.checkcc && d.checkcc.total > 0) rows.push(`<span class="pill cc">checkcc 估算 ${d.checkcc.total} 分</span>`);
     rows.push('</div>');
     if (!d.runtimeUp) rows.push('<p class="a">注意：生成报告时虚拟环境未在运行，部分项目无法检测。</p>');
     for (const g of d.groups || []) {
@@ -188,12 +198,13 @@ function buildExportHtml() {
 function render(res) {
   lastRaw = res ? (res.raw || res.out || '') : '';
   lastTime = new Date().toLocaleString();
-  $('cpSub').textContent = `对照风控维度逐项核对镜像、出口与指纹 · ${lastTime}`;
+  $('cpSub').textContent = `上次检查 ${lastTime}`;
   $('cpRaw').textContent = lastRaw;
   $('cpRawToggle').disabled = !lastRaw;
   $('cpRaw').hidden = true;
   $('cpRawToggle').textContent = '原始输出';
   $('cpBody').innerHTML = '';
+  $('cpFilter').hidden = true;
   $('cpVerdict').className = 'cp-verdict';
   $('cpVerdict').innerHTML = '';
   lastData = null;
@@ -211,7 +222,7 @@ function render(res) {
   }
   const d = res.data;
   const s = d.summary || { pass: 0, warn: 0, fail: 0, info: 0 };
-  renderVerdict(s, d.checkcc);
+  renderVerdict(s, d.checkcc, d.runtimeUp);
   lastData = d;
   paintBody();
   $('rpNote').textContent = `${s.pass || 0} 通过 · ${s.warn || 0} 注意 · ${s.fail || 0} 失败`;
@@ -235,6 +246,7 @@ async function doCheck() {
     render({ ok: false, error: error?.message });
   } finally {
     rerun.disabled = false;
+    rerun.textContent = '重新检测';
     $('cpExport').disabled = false;
   }
 }
@@ -267,5 +279,6 @@ if (!window.api) {
       btn.textContent = old;
     }
   });
-  doCheck();
+  if (!document.querySelector('[data-panel="check"]')) doCheck();
 }
+})();
