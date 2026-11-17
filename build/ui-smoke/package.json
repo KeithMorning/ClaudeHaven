@@ -1,0 +1,6 @@
+{
+  "name": "claudevm-ui-smoke",
+  "main": "smoke.js",
+  "private": true,
+  "description": "2.1 主界面冒烟：真实 index.html + mock preload，不启动 VM。运行：env -u ELECTRON_RUN_AS_NODE electron.exe build/ui-smoke"
+}

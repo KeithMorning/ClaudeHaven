@@ -1,33 +1,29 @@
 #!/usr/bin/env bash
-# 用真实 Chrome 在容器内完成 claude.ai 登录，且走与 Claude Code 相同的白名单代理出口
-# Chrome 打到本地 router(127.0.0.1:7890)，router 再按白名单把 anthropic 流量转上游代理
-PROXY_URL=""
-[ -f /opt/config/local-proxy ] && PROXY_URL="$(cat /opt/config/local-proxy)"
-# --proxy-server 不接受尾斜杠（http://h:p/ → ERR_NO_SUPPORTED_PROXIES），这里再兜一层，
-# 免得旧版本写下的配置继续害人。
-PROXY_URL="${PROXY_URL%/}"
-PROXY_FLAG=""
-[ -n "$PROXY_URL" ] && PROXY_FLAG="--proxy-server=$PROXY_URL"
+# 用真实 Chrome 在容器内完成 claude.ai 登录。
+# TUN 全量接管出口：流量在网络层被容器内 mihomo 抓走，浏览器不需要任何
+# --proxy-server，也没有 local-proxy 文件可读。
 
 # WSL/容器内以 root 运行时 Chrome 需要 --no-sandbox
 SANDBOX_FLAG=""
 [ "$(id -u)" = "0" ] && SANDBOX_FLAG="--no-sandbox"
 
-# 浏览器语言必须跟随所选地区，不能写死 en-US：
-# 否则 navigator.language 与系统 timezone / Intl locale 会自相矛盾，
-# 台北画像（Asia/Taipei + zh_TW.UTF-8）却报 en-US 尤其扎眼。
+# 浏览器语言唯一真源 = 画像派生、主进程写入 runtime-env 的 CHROME_LANG（坑 25）。
+# 老环境可能没有这个变量，才退回从 LANG 推导；新链路不该走到这个兜底。
 [ -f /opt/config/runtime-env ] && . /opt/config/runtime-env
-case "${LANG:-en_US.UTF-8}" in
-  zh_TW*) CHROME_LANG="zh-TW" ;;
-  ja_JP*) CHROME_LANG="ja-JP" ;;
-  de_DE*) CHROME_LANG="de-DE" ;;
-  en_GB*) CHROME_LANG="en-GB" ;;
-  *)      CHROME_LANG="en-US" ;;
+case "${CHROME_LANG:-}" in
+  zh-TW|ja-JP|de-DE|en-GB|en-US) : ;;
+  *)
+    case "${LANG:-en_US.UTF-8}" in
+      zh_TW*) CHROME_LANG="zh-TW" ;;
+      ja_JP*) CHROME_LANG="ja-JP" ;;
+      de_DE*) CHROME_LANG="de-DE" ;;
+      en_GB*) CHROME_LANG="en-GB" ;;
+      *)      CHROME_LANG="en-US" ;;
+    esac ;;
 esac
 
 # --lang 只改 Chrome 的 UI 语言，不会重写已有 Profile 的 Accept-Language。
-# 每次启动前把语言偏好固定成与系统 locale 一致（原子写、幂等），
-# 否则会出现「系统 Asia/Taipei + zh_TW，浏览器却发 en-US」的矛盾请求头。
+# 每次启动前把语言偏好固定成与画像一致（原子写、幂等）。
 if [ -f /opt/scripts/chrome-lang.py ]; then
   python3 /opt/scripts/chrome-lang.py --set >/dev/null 2>&1 || true
 fi
@@ -57,5 +53,4 @@ exec google-chrome-stable \
   --test-type \
   --force-webrtc-ip-handling-policy=disable_non_proxied_udp \
   $SANDBOX_FLAG \
-  $PROXY_FLAG \
   "$@"

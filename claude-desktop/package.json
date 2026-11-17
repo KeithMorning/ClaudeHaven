@@ -1,7 +1,7 @@
 {
   "name": "claude-desktop",
-  "version": "1.0.37",
-  "description": "Claude VM 桌面版：一键启动隔离的 Linux 虚拟环境（Chrome + Claude Code + 代理接入 + 串流桌面）",
+  "version": "2.0.3",
+  "description": "Claude VM 桌面版：一键启动隔离的 Linux 桌面（Chrome + Claude Code + 容器内 mihomo/TUN 全量接管 + 伪装画像 + 独立检查报告）",
   "main": "app/main.js",
   "author": "claude-vm",
   "license": "MIT",

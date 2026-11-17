@@ -1,5 +1,5 @@
 'use strict';
-// L1 单元测试：基础纯函数（编码 / 脱敏 / 路径规范 / 配置合并）
+// L1 单元测试：基础纯函数（编码 / 路径规范 / 配置合并）
 const { test } = require('node:test');
 const assert = require('node:assert');
 const { loadSegment } = require('../loader');
@@ -11,25 +11,7 @@ test('decodeChunk: 纯 UTF-8 输出按 UTF-8 解码', () => {
 
 test('decodeChunk: 头部含 0x00 判定 wsl.exe 的 UTF-16LE 输出', () => {
   const { decodeChunk } = loadSegment('decodeChunk');
-  // wsl.exe 输出 UTF-16LE（每个 ASCII 字符后跟一个 \0）
   assert.strictEqual(decodeChunk(Buffer.from('Ubuntu', 'utf16le')), 'Ubuntu');
-});
-
-test('redact: 抹掉代理 URL 里的 user:pass 凭据', () => {
-  const { redact } = loadSegment('redact');
-  assert.strictEqual(redact('http://user:pass@example.com:8080'), 'http://***@example.com:8080');
-});
-
-test('redact: 没有凭据的地址原样返回', () => {
-  const { redact } = loadSegment('redact');
-  assert.strictEqual(redact('http://192.168.240.1:7897'), 'http://192.168.240.1:7897');
-});
-
-test('redact: 空值安全', () => {
-  const { redact } = loadSegment('redact');
-  assert.strictEqual(redact(''), '');
-  assert.strictEqual(redact(null), '');
-  assert.strictEqual(redact(undefined), '');
 });
 
 test('normalizeWinPath: 正斜杠与重复反斜杠收敛（指纹漂移坑）', () => {
@@ -49,30 +31,55 @@ test('normalizeWinPath: 去首尾空白，空串安全', () => {
   assert.strictEqual(normalizeWinPath(''), '');
 });
 
-test('mergeCfg: 保存值覆盖默认值，workspace 被规范化', () => {
-  const { normalizeWinPath } = loadSegment('normalizeWinPath');
-  const pathStub = { join: (...a) => a.join('/').replace(/\\/g, '/') };
-  const appStub = { getPath: () => '/home/u' };
-  const { defaultConfig } = loadSegment('defaultConfig', {
-    path: pathStub, app: appStub, DEFAULT_WHITELIST: '.anthropic.com',
-  });
-  const { mergeCfg } = loadSegment('mergeCfg', { defaultConfig, normalizeWinPath });
-
-  const cfg = mergeCfg({ proxy: 'http://127.0.0.1:7897', workspace: 'C:/w s//p' });
-  assert.strictEqual(cfg.proxy, 'http://127.0.0.1:7897');
-  assert.strictEqual(cfg.workspace, 'C:\\w s\\p');
-  // 未提供的字段取默认
-  assert.strictEqual(cfg.tz, 'Asia/Taipei');
-  // macOS 没有 WSLg，mergeCfg 会强制 desktop；其它平台保留默认 wslg
-  assert.strictEqual(cfg.displayMode, process.platform === 'darwin' ? 'desktop' : 'wslg');
-  assert.strictEqual(cfg.netGuard, 'strict');
-});
-
 test('normalizeWinPath: POSIX 路径只收敛斜杠，不做反斜杠替换', () => {
   const { normalizeWinPath } = loadSegment('normalizeWinPath');
   assert.strictEqual(normalizeWinPath('/Users/keith//claude-workspace'), '/Users/keith/claude-workspace');
   assert.strictEqual(normalizeWinPath('/Users/keith/ws/'), '/Users/keith/ws');
   assert.strictEqual(normalizeWinPath('/'), '/');
+});
+
+test('defaultConfig: 2.0 单态配置，不再有旧代理/显示模式字段', () => {
+  const pathStub = { join: (...a) => a.join('/').replace(/\\/g, '/') };
+  const appStub = { getPath: () => '/home/u' };
+  const { defaultConfig } = loadSegment('defaultConfig', { path: pathStub, app: appStub });
+  const c = defaultConfig();
+  assert.strictEqual(c.persona, 'tw-taipei');
+  assert.strictEqual(c.selectedNode, '');
+  assert.strictEqual(c.clashYamlPath, '');
+  assert.strictEqual(c.netGuard, 'strict');
+  for (const legacy of ['proxy', 'proxyMode', 'whitelist', 'tunMode', 'displayMode', 'region',
+    'tz', 'lang']) {
+    assert.ok(!(legacy in c), `2.0 不该再有 ${legacy} 字段（tz/lang 由画像派生，不落盘）`);
+  }
+});
+
+test('坑 23：mergeCfg 清掉 1.0.x config.json 里残留的 tz / lang', () => {
+  const { normalizeWinPath } = loadSegment('normalizeWinPath');
+  const pathStub = { join: (...a) => a.join('/').replace(/\\/g, '/') };
+  const appStub = { getPath: () => '/home/u' };
+  const { defaultConfig } = loadSegment('defaultConfig', { path: pathStub, app: appStub });
+  const { mergeCfg } = loadSegment('mergeCfg', { defaultConfig, normalizeWinPath });
+  const cfg = mergeCfg({
+    persona: 'us', tz: 'America/Los_Angeles', lang: 'zh_CN.UTF-8',
+    selectedNode: 'us-1', workspace: 'C:/w',
+  });
+  assert.strictEqual(cfg.persona, 'us');
+  assert.ok(!('tz' in cfg) && !('lang' in cfg),
+    '残留旧时区必须与画像一起被丢弃，否则 spawn 与报告会对不上');
+});
+
+test('mergeCfg: 保存值覆盖默认值，workspace 被规范化', () => {
+  const { normalizeWinPath } = loadSegment('normalizeWinPath');
+  const pathStub = { join: (...a) => a.join('/').replace(/\\/g, '/') };
+  const appStub = { getPath: () => '/home/u' };
+  const { defaultConfig } = loadSegment('defaultConfig', { path: pathStub, app: appStub });
+  const { mergeCfg } = loadSegment('mergeCfg', { defaultConfig, normalizeWinPath });
+
+  const cfg = mergeCfg({ selectedNode: 'us-1', workspace: 'C:/w s//p' });
+  assert.strictEqual(cfg.selectedNode, 'us-1');
+  assert.strictEqual(cfg.workspace, 'C:\\w s\\p');
+  assert.strictEqual(cfg.persona, 'tw-taipei');
+  assert.strictEqual(cfg.netGuard, 'strict');
 });
 
 test('toWslPath: Windows 盘符路径转 /mnt/<小写盘符>/…', () => {

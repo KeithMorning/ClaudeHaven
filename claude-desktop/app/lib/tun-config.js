@@ -1,11 +1,12 @@
 'use strict';
 
-// Clash/Mihomo YAML 导入（模块一：容器内内核 + TUN）
+// Clash/Mihomo YAML 导入（2.0：容器内内核 + TUN 是唯一网络路径）。
 //
-// 宿主侧只做「校验 + 定位配置 + 算指纹」，不解析也不改写 YAML：
-// 用户继续用宿主的 Clash Verge / 文本编辑器改自己的订阅与规则，
-// 我们每次启动读最新内容注入客机 —— 这就是「外部只是辅助修改」。
-// 真正的配置合并（叠加 tun/dns 段、补节点路由）在客机 tun-merge.py 完成。
+// 宿主侧只做「校验 + 定位配置 + 解析节点 + 算指纹」，不改写 YAML 内容：
+// 用户继续用宿主的 Clash Verge / 文本编辑器改自己的订阅，我们每次启动读最新内容
+// 注入客机 —— 这就是「外部只是辅助修改」。
+// 真正的配置合并（叠加 tun/dns 段、按选中节点生成单节点组、补节点路由）在
+// 客机 tun-merge.py 完成。
 
 const crypto = require('crypto');
 const fs = require('fs');
@@ -19,27 +20,80 @@ function topKey(line) {
   return m ? m[1] : null;
 }
 
-/** 提取 proxies 段里所有 server 值（IP 或域名），保序去重。 */
-function extractNodeHosts(text) {
-  const hosts = [];
+const unquote = (s) => String(s || '').trim().replace(/^["']|["']$/g, '');
+
+/**
+ * 解析 proxies 段里的节点列表，返回 [{ name, type, server }]。
+ * 零依赖、行级状态机：Clash 的 proxies 是顶格 `proxies:` + 缩进的 `- name:` 列表。
+ * 节点名可能含中文/空格/引号，所以只 strip 成对引号，不做多余清洗。
+ */
+function extractNodes(text) {
+  const nodes = [];
   let inProxies = false;
+  let cur = null;
+  const flush = () => {
+    if (cur && cur.name) nodes.push(cur);
+    cur = null;
+  };
   for (const raw of String(text || '').replace(/\r\n?/g, '\n').split('\n')) {
     const k = topKey(raw);
     if (k) {
+      if (inProxies) flush();
       inProxies = (k === 'proxies');
       continue;
     }
     if (!inProxies) continue;
+    // 新节点开始（`- name: xxx` 或单独一行 `- type: xxx`）
+    const item = /^\s*-\s+(.*)$/.exec(raw);
+    if (item) {
+      flush();
+      cur = { name: '', type: '', server: '' };
+      const nm = /^name\s*:\s*(.+)$/.exec(item[1]);
+      if (nm) cur.name = unquote(nm[1]);
+      continue;
+    }
+    if (!cur) continue;
+    const kv = /^\s+(name|type|server)\s*:\s*([^\s#][^#]*)$/.exec(raw);
+    if (kv) {
+      const v = unquote(kv[2]);
+      if (kv[1] === 'name') cur.name = v;
+      else if (kv[1] === 'type') cur.type = v;
+      else if (kv[1] === 'server') cur.server = v;
+    }
+  }
+  flush();
+  // 同名节点去重（保序）：mihomo 里重名节点本身就是非法配置
+  const seen = new Set();
+  return nodes.filter((n) => {
+    if (seen.has(n.name)) return false;
+    seen.add(n.name);
+    return true;
+  });
+}
+
+/** 提取 proxies 段里所有 server 值（IP 或域名），保序去重。 */
+function extractNodeHosts(text) {
+  const hosts = [];
+  for (const n of extractNodes(text)) {
+    if (n.server && !hosts.includes(n.server)) hosts.push(n.server);
+  }
+  if (hosts.length) return hosts;
+  // 兼容没有 name 字段的极简配置：退回原来的 server 行扫描
+  let inProxies = false;
+  for (const raw of String(text || '').replace(/\r\n?/g, '\n').split('\n')) {
+    const k = topKey(raw);
+    if (k) { inProxies = (k === 'proxies'); continue; }
+    if (!inProxies) continue;
     const s = /^\s+(?:-\s+)?server\s*:\s*([^\s#]+)/.exec(raw);
     if (s) {
-      const h = s[1].replace(/^["']|["']$/g, '');
+      const h = unquote(s[1]);
       if (h && !hosts.includes(h)) hosts.push(h);
     }
   }
   return hosts;
 }
 
-/** 最小充分校验：能交给 mihomo 的 YAML 至少要有 proxies 列表。 */
+/** 最小充分校验：能交给 mihomo 的 YAML 至少要有 proxies 节点列表。 */
 function validateClashYaml(text) {
   const s = String(text || '');
   if (!s.trim()) return { ok: false, error: '配置文件为空' };
@@ -53,12 +107,14 @@ function validateClashYaml(text) {
     if (k === 'proxy-groups' || k === 'rules') hasGroupsOrRules = true;
   }
   if (!hasProxies) return { ok: false, error: 'YAML 里没有 proxies 节点列表，无法作为出口配置' };
+  const nodes = extractNodes(s);
+  if (!nodes.length) return { ok: false, error: 'proxies 里没有解析出任何节点（需要 - name: 字段）' };
   const hosts = extractNodeHosts(s);
   if (!hosts.length) return { ok: false, error: 'proxies 里没有任何 server 字段' };
   const warnings = [];
-  if (!hasGroupsOrRules) warnings.push('没有 proxy-groups / rules，mihomo 会按 mode 决定出口，建议确认分流结果');
-  if (/^\s*mode\s*:\s*direct\s*$/im.test(s)) warnings.push('原配置为 DIRECT 模式，客机会自动纠正为 global');
-  return { ok: true, hosts, warnings };
+  if (hasGroupsOrRules) warnings.push('全量单节点模式会忽略订阅原有的分流规则（proxy-groups / rules），所有流量走选中节点');
+  if (/^\s*mode\s*:\s*direct\s*$/im.test(s)) warnings.push('原配置为 DIRECT 模式，客机会纠正为 global');
+  return { ok: true, nodes, hosts, warnings };
 }
 
 /**
@@ -73,8 +129,7 @@ function readClashYaml(cfg, userDir) {
     try {
       text = fs.readFileSync(p, 'utf8');
       source = p;
-    } catch (e) {
-      // 外部文件被移动/删除时不静默失败：退回缓存，并让调用方提示
+    } catch {
       text = '';
     }
   }
@@ -101,17 +156,42 @@ function cacheClashYaml(text, userDir) {
   return p;
 }
 
+/**
+ * 最终使用的节点名：优先用户在界面里选的，且必须仍存在于当前 YAML；
+ * 未选 / 选的已失效时退回第一个节点（UI 会提示）。
+ */
+function selectedNode(cfg, text) {
+  const nodes = extractNodes(text || '');
+  if (!nodes.length) return '';
+  const want = String((cfg && cfg.selectedNode) || '').trim();
+  if (want && nodes.some((n) => n.name === want)) return want;
+  return nodes[0].name;
+}
+
 /** 配置内容变了必须重建会话，不能「接管」旧 TUN 内核。 */
 function tunFingerprint(text) {
   return crypto.createHash('sha256').update(String(text || '')).digest('hex').slice(0, 16);
 }
 
+/** base64 分块注入（Windows execFile 命令行上限 32767 字符）。 */
+const CHUNK = 8000;
+function base64Chunks(text) {
+  const b64 = Buffer.from(String(text || ''), 'utf8').toString('base64');
+  const out = [];
+  for (let i = 0; i < b64.length; i += CHUNK) out.push(b64.slice(i, i + CHUNK));
+  return out;
+}
+
 module.exports = {
   CACHE_NAME,
+  CHUNK,
   topKey,
+  extractNodes,
   extractNodeHosts,
   validateClashYaml,
   readClashYaml,
   cacheClashYaml,
+  selectedNode,
   tunFingerprint,
+  base64Chunks,
 };

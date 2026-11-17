@@ -49,9 +49,15 @@ if [ ! -d "$DATA" ] || [ ! -f "$DATA/geoip.metadb" ]; then
 fi
 
 # [1] 合并配置 + 预补节点/DNS 的 /32 主机路由
-MERGE_OUT="$(python3 /opt/scripts/tun-merge.py "$USER_CFG" "$CFG" 2>&1)"
+#     第 3 个参数是宿主传入的选中节点名（TUN_NODE）；空字符串也要占位，
+#     让 tun-merge 走「沿用订阅原 mode」的兼容分支。
+#     merge 失败（含节点名不在订阅里）一律保持全断网：不写 tun-ready、
+#     不切 resolv.conf、不起内核，交给 net-guard 的占位锁把直连掐死。
+MERGE_OUT="$(python3 /opt/scripts/tun-merge.py "$USER_CFG" "$CFG" "${TUN_NODE:-}" 2>&1)"
 if [ $? -ne 0 ] || [ ! -s "$CFG" ]; then
+  rm -f "$CFG" "$READY_FILE"
   log "严重：配置合并失败：$MERGE_OUT"
+  log "保持全断网：未写 tun-ready、未切换 resolv.conf、未启动内核"
   exit 1
 fi
 log "merge: $MERGE_OUT"

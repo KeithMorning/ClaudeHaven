@@ -1,6 +1,8 @@
 'use strict';
 const { contextBridge, ipcRenderer } = require('electron');
 
+// 主窗口与独立「环境检查报告」窗口共用这一份 preload；
+// 两边都通过 window.api 调用，报告窗口只用到 check / netStatus / exportReport。
 contextBridge.exposeInMainWorld('api', {
   getConfig: () => ipcRenderer.invoke('config:get'),
   saveConfig: (cfg) => ipcRenderer.invoke('config:save', cfg),
@@ -12,14 +14,20 @@ contextBridge.exposeInMainWorld('api', {
   check: () => ipcRenderer.invoke('runtime:check'),
   netStatus: () => ipcRenderer.invoke('net:status'),
   probeWsl: () => ipcRenderer.invoke('wsl:probe'),
-  // WSLg 模式：按需再开窗口 / 查看登录态
-  openTerminal: () => ipcRenderer.invoke('terminal:open'),
-  openShell: () => ipcRenderer.invoke('terminal:shell'),
-  authStatus: () => ipcRenderer.invoke('auth:status'),
-  authLogin: () => ipcRenderer.invoke('auth:login'),
-  detectProxy: () => ipcRenderer.invoke('proxy:detect'),
-  // 模块一：选择外部 Clash/Mihomo YAML，交给容器内内核
+  // 导入外部 Clash/Mihomo YAML，交给容器内内核；clash:nodes 用于刷新节点列表
   pickClashYaml: () => ipcRenderer.invoke('clash:pick'),
+  listNodes: () => ipcRenderer.invoke('clash:nodes'),
+  // 节点延迟：让客机的 mihomo 控制 API 实测，宿主只展示结果
+  nodeLatency: () => ipcRenderer.invoke('nodes:latency'),
+  // 自定义无边框窗口控制（顶栏按钮）
+  winMinimize: () => ipcRenderer.invoke('win:minimize'),
+  winMaximize: () => ipcRenderer.invoke('win:maximize'),
+  winClose: () => ipcRenderer.invoke('win:close'),
+  winState: () => ipcRenderer.invoke('win:state'),
+  onWinState: (cb) => ipcRenderer.on('win:state', (_e, s) => cb(s)),
+  // 独立检查报告窗口
+  openReport: () => ipcRenderer.invoke('report:open'),
+  exportReport: (html) => ipcRenderer.invoke('report:export', html),
   pickWorkspace: () => ipcRenderer.invoke('workspace:pick'),
   openWorkspace: (p) => ipcRenderer.invoke('workspace:open', p),
   exportDiag: () => ipcRenderer.invoke('diag:export'),

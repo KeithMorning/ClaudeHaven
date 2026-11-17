@@ -44,6 +44,18 @@ LANGS = {
 
 
 def expected():
+    """语言元组 (bcp47, Preferences 值, 期望请求头)。
+
+    唯一真源是主进程按画像派生、经 runtime-env 传进来的 CHROME_LANG（坑 25）。
+    以前这里从 LANG 猜、chrome-login.sh 又用另一套 case 猜、show-welcome.sh
+    干脆写死 en-US，三处不齐就出现「选了美区仍是繁中」。
+    退回 LANG 推导只为兼容没有该变量的老环境 / 独立调用。
+    """
+    want = (os.environ.get('CHROME_LANG') or '').strip()
+    if want:
+        for v in LANGS.values():
+            if v[0].lower() == want.lower():
+                return v
     lang = os.environ.get('LANG') or os.environ.get('LC_ALL') or ''
     key = lang.split('.')[0][:5]
     return LANGS.get(key, LANGS['en_US'])
@@ -78,6 +90,10 @@ def do_set():
     intl = d.setdefault('intl', {})
     intl['accept_languages'] = pref
     intl['selected_languages'] = pref
+    # app_locale 决定 Chrome 的**界面**语言。以前只写上面两个字段，结果
+    # Accept-Language 是 en-US、界面却还是繁中（坑 25）；--lang 参数在已有
+    # Chrome 实例时会被忽略，改不动它，必须落到 Profile 里。
+    intl['app_locale'] = bcp47
     # 避免复制出来的 Profile 因上次异常退出而弹「恢复页面」，影响 headless 测量
     prof = d.setdefault('profile', {})
     prof['exit_type'] = 'Normal'
@@ -88,11 +104,16 @@ def do_set():
         json.dump(d, f, ensure_ascii=False, separators=(',', ':'))
     os.chmod(tmp, 0o600)
     os.replace(tmp, PREFS)
-    # Chrome 正在运行时会在退出时用内存里的值覆盖磁盘；如实回报，让调用方提示重启浏览器
-    running = subprocess.run(['pgrep', '-x', 'chrome'],
-                             capture_output=True).returncode == 0
+    # Chrome 正在运行时会在退出时用内存里的值覆盖磁盘；如实回报，让调用方提示重启浏览器。
+    # pgrep 在客机里必然存在，但单元测试会在 Windows 上加载本模块 —— 兜底为 False，
+    # 别让一个纯状态回报把 --set 整个流程打断。
+    try:
+        running = subprocess.run(['pgrep', '-x', 'chrome'],
+                                 capture_output=True).returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        running = False
     return {'ok': True, 'bcp47': bcp47, 'pref': pref, 'expected_header': want,
-            'changed': old != pref, 'previous': old,
+            'app_locale': bcp47, 'changed': old != pref, 'previous': old,
             'chrome_running': running}
 
 
@@ -163,6 +184,7 @@ def do_verify():
         detail = why
     return {'ok': bool(header), 'mode': mode, 'header': header,
             'expected': want, 'pref': pref, 'bcp47': bcp47,
+            'app_locale': (load_prefs().get('intl') or {}).get('app_locale') or '',
             'match': ok, 'static': static, 'detail': detail}
 
 
@@ -180,6 +202,7 @@ def main():
         print(out.get('header', ''))
         print('true' if out.get('match') else 'false')
         print(str(out.get('detail', '')).replace('\n', ' '))
+        print(str(out.get('app_locale', '') or ''))
     else:
         print(json.dumps(out, ensure_ascii=False))
 

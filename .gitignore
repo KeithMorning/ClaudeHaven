@@ -42,6 +42,11 @@ claude-desktop/build/*
 # 工作区记忆与本地会话数据
 .workbuddy/
 
+# WorkBuddy / Claude Code 的本地 skill 副本与锁文件（工具产物，非项目代码）
+.agents/
+.claude/
+skills-lock.json
+
 # Python 编译产物
 __pycache__/
 *.pyc

@@ -1,11 +1,13 @@
 # ClaudeVM
 
-在 Windows 上一键拉起一个**隔离的 Linux 桌面环境**，里面预装 Chrome 与 Claude Code，
-并强制所有出网流量经代理（fail-closed：代理断开即断网，不会回落到直连）。
+在 Windows 上一键拉起一个**隔离的 Linux 桌面环境**，里面预装 Chrome 与 Claude Code。
+**2.0 起出网流量由容器内的 mihomo 内核经 TUN 全量接管**（fail-closed：内核退出即断网），
+宿主代理软件只是编辑/导入 YAML 的辅助工具，不参与运行时链路。
 
-- **WSLg 模式（默认）**：Claude Code / 终端以原生窗口出现，不经过浏览器。
-- **desktop 模式**：TigerVNC + websockify + noVNC 串流，只监听 `127.0.0.1`，
-  用于 WSLg 不可用的机器（如部分 Win10 / 远程桌面场景）。
+- **串流桌面（唯一显示模式）**：TigerVNC + websockify + noVNC，只监听 `127.0.0.1`。
+- **导入 YAML + 选择节点**：从 `proxies` 里选一个节点作为全量出口。
+- **伪装画像**：中国台湾·台北 / 美国·纽约两套，一次切换时区、语言与浏览器语言头。
+- **独立检查报告**：单独窗口渲染检测结果，不遮挡桌面、不影响使用。
 
 ## 仓库结构
 
@@ -32,15 +34,16 @@ macOS 上未签名的 dmg 首次打开需右键 →「打开」绕过 Gatekeeper
 
 ## 运行时镜像
 
-`rootfs.tar.gz`（约 620 MB）**不在仓库里**。它由 `claude-vm/vm/Dockerfile` 构建后导出，
-应用首次启动时导入为运行时：Windows 上是名为 `claude-vm` 的 **WSL2 发行版**，
-macOS 上是 **Docker / OrbStack 容器**（`docker import`，Apple Silicon 靠 Rosetta 跑 amd64）。
+`rootfs.tar.gz`（约 650 MB）**不在仓库里**。它由 `claude-vm/vm/Dockerfile` 构建后导出，
+内含 mihomo 内核与 GeoIP 数据库；应用首次启动时导入为运行时：
+Windows 上是名为 `claude-vm` 的 **WSL2 发行版**，macOS 上是 **Docker / OrbStack 容器**。
 构建与导出方法见 [`doc/engineering/01-构建与打包.md`](doc/engineering/01-构建与打包.md)；
 macOS 细节见 [`doc/platform/02-macOS-容器后端.md`](doc/platform/02-macOS-容器后端.md)。
 
 ## 安全边界
 
-- 网络熔断：删除默认路由，只保留通往代理的主机路由；代理不可用时保持断网。
+- 容器内内核 + TUN 全量接管：应用无需显式代理，DNS / UDP / IPv6 一并被接管。
+- 网络熔断：删除默认路由作为 fail-closed 底座；内核退出时 TUN 与策略路由一起消失，立刻全断。
 - noVNC 只监听回环地址，不暴露到局域网。
 - 宿主工作区通过 `/mnt` 挂载，登录态保存在虚拟磁盘内。
 

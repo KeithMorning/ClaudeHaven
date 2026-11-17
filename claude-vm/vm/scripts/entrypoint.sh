@@ -4,10 +4,9 @@ set -e
 # 0) Node / Claude Code 可执行路径（WSL 导入后不继承镜像 ENV，这里显式补上）
 export PATH="/usr/local/lib/nodejs/node-v20.18.1-linux-x64/bin:$PATH"
 
-# XDG_RUNTIME_DIR：WSLg 把默认运行时目录建在 /mnt/wslg/runtime-dir 且属主是 uid 1000，
-# 而本会话以 root 运行 —— 属主不匹配会让 GTK3 应用卡死在初始化（进程活着、窗口永远
-# 不出现、无任何报错）。lxterminal 起不来、输入法「像坏了一样」都是这个原因。
-# 换成 root 自己的运行时目录，GTK 应用立刻正常（实测 im-ibus + Rime 直接出「你好」）。
+# XDG_RUNTIME_DIR：WSL 的默认运行时目录属主是 uid 1000，而本会话以 root 运行 ——
+# 属主不匹配会让 GTK3 应用卡死在初始化（进程活着、窗口永远不出现、无任何报错）。
+# 换成 root 自己的运行时目录，GTK 应用立刻正常。2.0 只走串流桌面，但这条仍必须保留。
 export XDG_RUNTIME_DIR=/tmp/claude-vm-runtime
 mkdir -p "$XDG_RUNTIME_DIR" && chmod 700 "$XDG_RUNTIME_DIR"
 if [ ! -e /usr/local/bin/claude ] && [ -x /usr/local/lib/nodejs/node-v20.18.1-linux-x64/bin/claude ]; then
@@ -46,122 +45,45 @@ if [ -n "$LANG" ]; then
   fi
 fi
 
-# 2) 出口链路
-#    两种来源，优先级：用户自己的 VPS 隧道 > 宿主侧代理
-#      a) 隧道：ssh -N -D 到用户 VPS，整个虚拟机出口 = 那台机器。
-#      b) 宿主代理：用户本机的 Clash / v2ray 之类，出口 = 它当前选中的节点。
-#
-#    分流模式（PROXY_MODE，由客户端传入，默认 all）：
-#      all      —— 全部流量交给上游，由上游自己的规则分流。
-#                  这是正确默认：Clash 一类客户端本来就带完整规则集，
-#                  让它决定比我们用 8 条白名单猜要准得多。更重要的是
-#                  「出口一致性」—— api.anthropic.com 从洛杉矶出、而统计/
-#                  遥测请求从北京直连，会形成自相矛盾的信号，体检里直接扣分。
-#      whitelist —— 只有白名单域名走上游，其余直连。仅在用户明确要求
-#                  「只让 Anthropic 走代理」时使用。
-ROUTER_PORT="${PROXY_ROUTER_PORT:-7890}"
-HOST_PROXY="${UPSTREAM_PROXY:-}"
-EFFECTIVE_UP="$HOST_PROXY"
-PROXY_MODE="${PROXY_MODE:-all}"
-case "$PROXY_MODE" in
-  all|whitelist) ;;
-  *) PROXY_MODE="all" ;;
-esac
-
-# 2.1) TUN 模式：容器内自带代理内核（mihomo），宿主 Clash 只是「导入/编辑 YAML」
-#      的辅助工具，运行时链路里没有它 —— 宿主切 Global 还是 Direct 与本环境无关。
-#      必须在 net-guard 熔断**之前**启动：内核要在还有默认路由时解析节点域名、
-#      预置 GeoIP、补 /32 主机路由；默认路由一删，这些就都做不了了。
-#      实测结论见 build/TUN-SPIKE-结果.md（第四轮 tun-builtin-spike.sh 全绿）。
-TUN_MODE="${TUN_MODE:-0}"
-export TUN_MODE
-if [ "$TUN_MODE" = "1" ]; then
-  if [ -s /opt/config/clash.yaml ] && [ -x /opt/scripts/tun-core.sh ]; then
-    /opt/scripts/tun-core.sh &
-    TUN_CORE_PID=$!
-    echo "[claude-vm] TUN 模式：容器内代理内核启动中（pid=$TUN_CORE_PID）"
-    # 等「DNS 已切进内核」的显式标记再进入熔断，最多 15 秒。
-    # 只看 Meta 网卡不够：网卡先于 resolv.conf 切换出现，那个窗口里
-    # getent 仍会问到 WSL 的 DNS 代理（宿主 fake-ip 198.18.x）。
-    for _ in $(seq 1 30); do
-      [ "$(cat /run/claude-vm/tun-ready 2>/dev/null)" = "ready" ] && break
-      sleep 0.5
-    done
-    if [ "$(cat /run/claude-vm/tun-ready 2>/dev/null)" != "ready" ]; then
-      echo "[claude-vm] 严重：TUN 未就绪，net-guard 将保持全断网（fail-closed）"
-    fi
-    # 应用侧不再设任何显式代理：流量由 TUN 在网络层接管。
-    # 同时清掉 local-proxy，Chrome 的 --proxy-server 也会跟着消失，避免双层代理。
-    EFFECTIVE_UP=""
-    unset HTTP_PROXY HTTPS_PROXY http_proxy https_proxy ALL_PROXY all_proxy
-    rm -f /opt/config/local-proxy
-  else
-    echo "[claude-vm] 严重：已开启 TUN 模式但缺少 clash.yaml / tun-core.sh，网络保持全断网"
-    EFFECTIVE_UP=""
-    TUN_MODE=0
-    rm -f /opt/config/local-proxy
+# 2) 出口链路（2.0：容器内 mihomo + TUN 是唯一网络路径）
+#    宿主 Clash 只是「导入/编辑 YAML」的辅助工具，运行时链路里没有它 ——
+#    宿主切 Global 还是 Direct、甚至关掉，都与本环境的出口无关。
+#    必须在 net-guard 熔断**之前**启动：内核要在还有默认路由时解析节点域名、
+#    预置 GeoIP、补 /32 主机路由；默认路由一删，这些就都做不了了。
+#    实测结论见 build/TUN-SPIKE-结果.md（第四轮 tun-builtin-spike.sh 全绿）。
+if [ -s /opt/config/clash.yaml ] && [ -x /opt/scripts/tun-core.sh ]; then
+  /opt/scripts/tun-core.sh &
+  TUN_CORE_PID=$!
+  echo "[claude-vm] 容器内内核启动中（pid=$TUN_CORE_PID, node=${TUN_NODE:-auto}）"
+  # 等「DNS 已切进内核」的显式标记再进入熔断，最多 15 秒。
+  # 只看 Meta 网卡不够：网卡先于 resolv.conf 切换出现，那个窗口里
+  # getent 仍会问到 WSL 的 DNS 代理（宿主 fake-ip 198.18.x）。
+  for _ in $(seq 1 30); do
+    [ "$(cat /run/claude-vm/tun-ready 2>/dev/null)" = "ready" ] && break
+    sleep 0.5
+  done
+  if [ "$(cat /run/claude-vm/tun-ready 2>/dev/null)" != "ready" ]; then
+    echo "[claude-vm] 严重：TUN 未就绪，net-guard 将保持全断网（fail-closed）"
   fi
-fi
-
-if [ -n "$EFFECTIVE_UP" ]; then
-  export UPSTREAM_PROXY="$EFFECTIVE_UP"
-  export PROXY_MODE
-
-  if [ "$PROXY_MODE" = "all" ]; then
-    # 全量模式：直接把上游当代理用，中间不插本地 router。
-    # 理由很实在 —— router 只是一个转发进程，多一层就多一个会挂掉的环节；
-    # 它一旦退出，Chrome 会静默退化成「直连」，用户看到的就是
-    # 「出口变成本地运营商 / 体检风险变高」，且没有任何报错提示。
-    PROXY_URL="$EFFECTIVE_UP"
-    echo "[claude-vm] 分流模式: 全量经 $EFFECTIVE_UP（不经本地路由）"
-  else
-    PROXY_URL="http://127.0.0.1:${ROUTER_PORT}"
-    echo "[claude-vm] 分流模式: 仅 Anthropic 流量经 $EFFECTIVE_UP（其余直连）"
-    node /opt/scripts/proxy-router.js &
-    ROUTER_PID=$!
-    # 看门狗：router 退出就拉起来，避免下一次请求悄悄变成直连
-    (
-      while sleep 10; do
-        if ! kill -0 "$ROUTER_PID" 2>/dev/null; then
-          echo "[claude-vm] 本地路由已退出，正在重启"
-          node /opt/scripts/proxy-router.js &
-          ROUTER_PID=$!
-        fi
-      done
-    ) &
-  fi
-
-  # Chrome 的 --proxy-server 只接受 host:port；带尾斜杠（http://h:p/）会被判成
-  # ERR_NO_SUPPORTED_PROXIES，页面直接 "This site can't be reached"，而 curl 毫无
-  # 反应 —— 于是自检全绿、浏览器全挂。统一在入口去掉尾斜杠。
-  PROXY_URL="${PROXY_URL%/}"
-
-  export HTTPS_PROXY="$PROXY_URL"
-  export HTTP_PROXY="$PROXY_URL"
-  export https_proxy="$PROXY_URL"
-  export http_proxy="$PROXY_URL"
-  export NO_PROXY="localhost,127.0.0.1"
-  export no_proxy="$NO_PROXY"
-  echo "$PROXY_URL" > /opt/config/local-proxy
-  # 出口探测统一交给 2.4 的 net-guard：它先熔断再探测，探测本身也不走直连，
-  # 而且会周期刷新。这里不再另起一个「20 秒后」的后台任务 —— 两个进程写同一份
-  # /run/claude-vm/exit.state 会互相覆盖，界面拿到的出口信息会随机跳。
+  # 应用侧不设任何显式代理：流量由 TUN 在网络层接管。
+  unset HTTP_PROXY HTTPS_PROXY http_proxy https_proxy ALL_PROXY all_proxy
+  # 清掉 1.0.x 环境可能残留的旧代理端点文件（只读清理，不写新值）
+  rm -f /opt/config/local-proxy
 else
-  echo "[claude-vm] 未配置代理：net-guard 将切断全部直连（fail-closed）"
+  # 没有配置就不要放行网络：宁可全断，也不能拉起一台「显示就绪、其实裸奔」的环境。
+  echo "[claude-vm] 严重：缺少 clash.yaml / tun-core.sh，网络保持全断网（fail-closed）"
+  unset HTTP_PROXY HTTPS_PROXY http_proxy https_proxy ALL_PROXY all_proxy
+  rm -f /opt/config/local-proxy
 fi
 
-# 2.4) 网络熔断 —— 代理是唯一出口，代理断了网络就是断的
+# 2.4) 网络熔断（fail-closed 底座）
 #
-# 为什么必须在这一行、而不是等桌面/终端起来之后：
-#   HTTP_PROXY 只是「应用层建议」，不读环境变量的程序、DNS、raw socket 都能绕过去。
-#   net-guard 直接改内核路由表：删掉默认路由，只保留到代理的那条 on-link 路，
-#   同时关掉 IPv6。此后任何非代理目标内核直接返回 ENETUNREACH —— 不是「检测到
-#   代理断了再去断网」，而是从一开始就没有直连这条路，不存在泄漏时间窗。
-#   它放在所有业务（X / 浏览器 / Claude Code）之前，业务一睁眼就已经被锁住。
-#
-# 预检也在 net-guard 内部、锁完之后才跑：代理没开 / 没开 Allow LAN / 出口仍在
-# 受限地区 / 多源出口分叉 / api.anthropic.com 不通，一律保持封锁并写明原因，
-# 绝不放行。状态落在 /run/claude-vm/net-guard.state，界面与自检都读它。
+# 容器内内核活着时：TUN 的 table 2022 策略路由把全部流量送进 Meta。
+# 内核一挂：TUN 与策略路由一起消失，而 net-guard 又删掉了 main 表默认路由 ——
+# 于是没有任何一条路能出去，**立刻全断，不需要任何检测动作**。
+# 它放在所有业务（X / 浏览器 / Claude Code）之前，业务一睁眼就已经被锁住。
+# 预检也在 net-guard 内部、锁完之后才跑：内核/Meta 网卡存活、出口地区不是
+# CN/HK/MO、多源出口一致、直连封锁验证，一律不过就保持封锁并写明原因。
 NET_GUARD="${NET_GUARD:-strict}"
 export NET_GUARD
 if [ -x /opt/scripts/net-guard.sh ]; then
@@ -169,7 +91,7 @@ if [ -x /opt/scripts/net-guard.sh ]; then
   NET_GUARD_PID=$!
   echo "[claude-vm] 网络守卫已启动（pid=$NET_GUARD_PID, mode=$NET_GUARD）"
 else
-  # 脚本没同步成功时不能假装安全：宁可让自检报红，也不要静默裸奔。
+  # 脚本没同步成功时不能假装安全：宁可让检查报告报红，也不要静默裸奔。
   echo "[claude-vm] 严重：net-guard.sh 缺失，网络未受保护！请重新启动以同步脚本"
 fi
 
@@ -179,31 +101,30 @@ if [ -n "$WORKSPACE" ] && [ -d "$WORKSPACE" ] && [ ! -e /workspace ]; then
 fi
 mkdir -p /workspace
 
-# 2.6) Chrome 策略：堵住两条「不走代理」的旁路
-#   · WebRTC 走 UDP，不受 HTTP 代理约束 —— 网页能直接读到真实出口 IP（体检站里 +19 的那一项）
-#   · DNS 走本机运营商解析器 —— 与代理出口地区对不上，被判「DNS/出口地区矛盾」
-# 只有配置了代理时才强制 DoH，否则没代理的用户会连域名都解析不出来。
+# 2.6) Chrome 策略：堵住两条「不走内核」的旁路
+#   · WebRTC 走 UDP，网页能直接读到真实出口 IP
+#   · DNS over HTTPS 由容器内内核统一解析，出口地区才与 API 一致
+# 2.0 下容器内核恒在，DoH 无条件开启。
 CHROME_POLICY_DIR=/etc/opt/chrome/policies/managed
 mkdir -p "$CHROME_POLICY_DIR"
-if [ -n "$UPSTREAM_PROXY" ]; then
-  cat > "$CHROME_POLICY_DIR/claude-vm.json" <<'JSON'
+cat > "$CHROME_POLICY_DIR/claude-vm.json" <<'JSON'
 {
   "WebRtcIPHandling": "disable_non_proxied_udp",
   "DnsOverHttpsMode": "secure",
   "DnsOverHttpsTemplates": "https://cloudflare-dns.com/dns-query"
 }
 JSON
-else
-  cat > "$CHROME_POLICY_DIR/claude-vm.json" <<'JSON'
-{
-  "WebRtcIPHandling": "disable_non_proxied_udp"
-}
-JSON
-fi
 
-# 2.65) 固定 Chrome 的语言偏好
-#   --lang 管不到已存在 Profile 的 intl.accept_languages，登录时请求头会退回 en-US。
-#   环境启动时就修正一次，不依赖用户是否点过「登录 claude.ai」。
+# 2.65) 固定 Chrome 的语言偏好（坑 25）
+#   --lang 只改 UI 语言，管不到已存在 Profile 的 intl.accept_languages / app_locale。
+#   更隐蔽的是：只要还有 Chrome 实例活着，chrome-login.sh 的 exec 会把 URL 交给
+#   旧实例，新的 --lang 被完全忽略；旧实例退出时还会把内存里的旧语言写回磁盘。
+#   结果就是「画像切到美区、报告和磁盘都是 en-US，实际浏览器仍是繁中」。
+#   环境启动这一步一律先清残留实例，再按画像 CHROME_LANG 写 Profile。
+if pgrep -x chrome >/dev/null 2>&1; then
+  pkill -x chrome >/dev/null 2>&1 || true
+  sleep 1
+fi
 if [ -f /opt/scripts/chrome-lang.py ]; then
   python3 /opt/scripts/chrome-lang.py --set >/dev/null 2>&1 || true
 fi
@@ -398,19 +319,13 @@ if [ -n "$_cb_dir" ]; then
   done
 fi
 
-# 4) 显示后端：两种模式
-#    wslg（默认）—— 用 WSLg 的 DISPLAY=:0。Linux 应用由 RDP/RAIL 变成 Windows
-#      原生窗口：剪贴板、音频、DPI 缩放全都原生，不需要 Xtigervnc/websockify/noVNC。
-#      日常只在终端窗口里跑 Claude Code，跟本机终端几乎一样。
-#    desktop —— 保留 noVNC 串流桌面（也是 Mac 上唯一能嵌进应用窗口的图形方案）。
-#    由客户端通过 DISPLAY_MODE 传入；旧版本没传时按 desktop 走，行为不变。
-DISPLAY_MODE="${DISPLAY_MODE:-desktop}"
+# 4) 显示后端（2.0：只有串流桌面一种模式）
+#    启动 Xtigervnc（WSL 把 /tmp/.X11-unix 挂成只读，故禁用 unix socket，
+#    仅用 TCP 5901）。分辨率只是「初始值」：客户端连上后会用 RFB 的
+#    SetDesktopSize 按窗口实际大小重设，所以放大窗口是真正的 1:1 像素。
+DISPLAY_MODE=desktop
 
-if [ "$DISPLAY_MODE" = "desktop" ]; then
-# 4d) 启动 Xtigervnc（WSLg 把 /tmp/.X11-unix 挂成只读，故禁用 unix socket，仅用 TCP 5901）
-#    分辨率只是「初始值」：客户端连上后会用 RFB 的 SetDesktopSize 按窗口实际大小
-#    重新设置（xrandr 的 maximum 是 32768x32768，改得动），所以放大窗口就是真正的
-#    1:1 像素，不是把 1280x800 拉伸——拉伸会让文字发虚，一眼就看出「不是本机」。
+# 4d) 启动 Xtigervnc
 VENV_GEOMETRY="${NOVNC_GEOMETRY:-1600x900}"
 mkdir -p ~/.vnc
 pkill -x Xtigervnc 2>/dev/null || true
@@ -423,15 +338,11 @@ Xtigervnc :1 -geometry "$VENV_GEOMETRY" -depth 24 -rfbport 5901 -localhost \
 sleep 2
 
 # 5) 桌面：壁纸 → 窗口管理器 → 面板
-#    Chrome 被强杀后下次启动会弹「恢复页面」，启动时把崩溃标记复位掉
 node /opt/scripts/fix-chrome-prefs.js >/dev/null 2>&1 || true
-# 桌面刚起来时肯定没有 Chrome 在跑，直接清掉陈旧 Profile 锁（原因见 chrome-login.sh）。
-# 覆盖从桌面图标启动的路径 —— 那条路走 run-chrome.sh → chrome-login.sh，一样会清，
-# 但会话被强杀后残留的锁必须由启动段先清掉，否则用户第一次点图标就白点。
+# 覆盖从桌面图标启动的路径；会话被强杀后残留的锁必须由启动段先清掉。
 rm -f /root/.config/google-chrome/SingletonLock \
       /root/.config/google-chrome/SingletonCookie \
       /root/.config/google-chrome/SingletonSocket 2>/dev/null || true
-# 首次引导（选主题那套）不该出现在一个已经装好的桌面里，提前把状态写好
 node /opt/scripts/seed-claude-state.js >/dev/null 2>&1 || true
 
 if [ -f /opt/wall/wall.png ]; then
@@ -452,21 +363,15 @@ if [ ! -f ~/.config/claude-vm-welcomed ]; then
 fi
 
 # 6) 启动 noVNC 网页流服务
-#    只绑回环：Windows 侧的 WSL localhost 转发能到达发行版自己的 127.0.0.1
-#    （实测 wslrelay → 127.0.0.1 可用），所以没必要监听 0.0.0.0。
-#    绑 0.0.0.0 的唯一后果是：一旦用户开了 mirrored 网络模式，同网段任何人都能
-#    打开 http://<主机IP>:6080 直接操作这台虚拟机里的登录态，而 VNC 本身是无认证的。
+#    只绑回环：Windows 侧的 WSL localhost 转发能到达发行版自己的 127.0.0.1。
+#    绑 0.0.0.0 的唯一后果是同网段任何人都能打开 6080 直接操作登录态。
 websockify --web=/usr/share/novnc "${NOVNC_BIND:-127.0.0.1}:${NOVNC_PORT:-6080}" localhost:5901 &
 
-# 会话兜底 + 桌面自愈：以前 desktop 模式只靠 Xtigervnc / websockify / openbox
-# 「天然常驻」，可只要其中一个以非 0 退出，末尾的 wait 就返回该码；脚本开头又是
-# set -e，于是整个 entrypoint 直接结束、wsl.exe 退出、发行版变 Stopped ——
-# 日志里就是「运行时进程退出 code=1」，同时 Chrome 打不开、输入法消失、桌面全没。
-# 和 wslg 模式一样放一个永不退出的子进程把 wait 挂住；desktop-guard.sh 负责
-# 把崩掉的组件逐个拉回来，用户不必手动「停止 → 启动」。
-# D-Bus 会话总线必须在 desktop-guard 启动之前就位：guard 的输入法探活走
-# fcitx5-remote（需要总线地址），没有它 guard 会把 fcitx5 误判成死掉，
-# 4 秒一轮杀掉重拉 —— 表现就是打字时好时坏、fcitx5 日志里反复 Unloading addon。
+# 会话兜底 + 桌面自愈：任一组件以非 0 退出，末尾的 wait 就会返回，
+# 加上开头的 set -e 会让整个 entrypoint 结束、发行版变 Stopped。
+# 放一个永不退出的子进程把 wait 挂住；desktop-guard.sh 负责把崩掉的组件拉回来。
+# D-Bus 必须在 guard 之前就位：guard 的输入法探活走 fcitx5-remote，
+# 没有它 guard 会把 fcitx5 误判成死掉，4 秒一轮杀掉重拉。
 if [ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ]; then
   if command -v dbus-launch >/dev/null 2>&1; then
     eval "$(dbus-launch --sh-syntax)" 2>/dev/null || true
@@ -484,28 +389,8 @@ fi
 sleep infinity &
 nohup /opt/scripts/desktop-guard.sh >/tmp/desktop-guard.log 2>&1 &
 
-else
-# 4w) WSLg 模式：不启 X server / 窗口管理器 / 串流服务。
-#     DISPLAY=:0 是 WSLg 的 Weston（rdprail-shell），每个 Linux 应用自己就是一个
-#     Windows 顶层窗口；剪贴板与音频走 RDP 通道，不需要我们自己的桥。
-export DISPLAY=:0
-export PULSE_SERVER="unix:/mnt/wslg/PulseServer"
-
-# 会话必须常驻：实测只要拉起窗口的那条 wsl.exe 结束，发行版就会变 Stopped，
-# 已经打开的 WSLg 窗口和剪贴板同步会一起消失。entrypoint 末尾的 wait 需要一个
-# 永不退出的子进程来兜住整个会话（桌面模式靠 Xtigervnc/websockify 天然兜住）。
-# 从「串流桌面」切过来时，上一轮的 X server / 串流服务可能还活着；
-# 留着它们会占着 6080 和 :1，还让用户看到两套窗口。
-pkill -x Xtigervnc 2>/dev/null || true
-pkill -f "websockify --web" 2>/dev/null || true
-
-sleep infinity &
-echo "[claude-vm] WSLg 模式就绪：DISPLAY=:0（无 Xtigervnc / websockify）"
-fi
-
-# 2.45) 中文输入法 —— 刻意放在 DISPLAY_MODE 分支之后
-#   （DISPLAY 必须先确定；输入法服务要注册到正确的 X server / 会话总线，
-#    且早于 runtime-env 写盘 —— 7) 落盘会把 DBUS/GTK_IM_MODULE 传给独立会话。）
+# 2.45) 中文输入法 —— 刻意放在 `export DISPLAY=:1` 之后
+#   （输入法服务要注册到正确的 X server / 会话总线，且早于 runtime-env 写盘。）
 # 2.45) 中文输入法（可选）：fcitx5 + Rime 万象拼音（1.0.34 起）
 #   WSLg 不转发 Windows IME 的 preedit 组合串，但按键本身是转发的 ——
 #   所以输入法跑在虚拟机内部，组合与提交都在 Linux 侧完成。
@@ -560,23 +445,20 @@ if [ "$INPUT_METHOD" = "rime" ]; then
 fi
 
 # 7) 落盘「运行时实际生效的环境」，供独立会话读取
-#    （桌面程序的「自检」是新开一个 WSL 会话，继承不到本脚本 export 的变量）
+#    （检查报告是新开一个 WSL 会话，继承不到本脚本 export 的变量）
 {
   echo "export TZ='${TZ:-}'"
   echo "export LANG='${LANG:-}'"
   echo "export LC_ALL='${LC_ALL:-}'"
   echo "export LANGUAGE='${LANGUAGE:-}'"
+  # 画像派生的浏览器语言：chrome-login.sh / chrome-lang.py / 自检都读它
+  echo "export CHROME_LANG='${CHROME_LANG:-}'"
   echo "export DISPLAY='${DISPLAY}'"
   echo "export XDG_RUNTIME_DIR='${XDG_RUNTIME_DIR:-}'"
   echo "export DBUS_SESSION_BUS_ADDRESS='${DBUS_SESSION_BUS_ADDRESS:-}'"
   echo "export DISPLAY_MODE='${DISPLAY_MODE}'"
-  echo "export PULSE_SERVER='${PULSE_SERVER:-}'"
-  echo "export UPSTREAM_PROXY='${UPSTREAM_PROXY:-}'"
-  echo "export PROXY_MODE='${PROXY_MODE:-}'"
-  echo "export PROXY_WHITELIST='${PROXY_WHITELIST:-}'"
-  echo "export PROXY_ROUTER_PORT='${ROUTER_PORT}'"
-  echo "export HTTPS_PROXY='${HTTPS_PROXY:-}'"
-  echo "export HTTP_PROXY='${HTTP_PROXY:-}'"
+  # 2.0：出口由容器内内核 + 选中节点决定，不再有任何显式代理地址
+  echo "export TUN_NODE='${TUN_NODE:-}'"
   echo "export NET_GUARD='${NET_GUARD:-strict}'"
   echo "export NET_GUARD_STRICT_REGION='${NET_GUARD_STRICT_REGION:-1}'"
   echo "export INPUT_METHOD='${INPUT_METHOD:-off}'"
@@ -589,28 +471,13 @@ fi
 } > /opt/config/runtime-env
 chmod 644 /opt/config/runtime-env
 
-# 就绪标记：客户端不再只靠 6080 端口判断「环境是否起来了」——
-# WSLg 模式不监听任何端口，必须有一个明确的信号告诉主进程可以开窗了。
-# 文件内容写模式名，客户端据此确认这次拉起来的是自己要的那一种。
+# 就绪标记：客户端主要靠 6080 端口判活，这里再写一份明确信号。
 mkdir -p /run/claude-vm
 printf '%s\n' "$DISPLAY_MODE" > /run/claude-vm/ready
 
-# WSLg 模式：启动即弹出 Claude Code 终端窗口（日常唯一入口）。
-# 登录态沿用容器里已有的 ~/.claude：没登录时 Claude Code 自己在终端里给出
-# 授权链接，界面也会提示「先完成授权」，不会每次启动都强行弹浏览器。
-# nohup + & 让窗口脱离 entrypoint；会话由 sleep infinity 兜住，关窗口不停虚拟机。
-if [ "$DISPLAY_MODE" != "desktop" ]; then
-  nohup /opt/scripts/run-claude.sh >/tmp/wslg-terminal.log 2>&1 &
-  echo "[claude-vm] 已拉起 Claude Code 终端窗口（WSLg）"
-fi
-
-if [ "$DISPLAY_MODE" = "desktop" ]; then
-  echo "[claude-vm] 就绪（串流桌面）。noVNC: ${NOVNC_BIND:-127.0.0.1}:${NOVNC_PORT:-6080}"
-else
-  echo "[claude-vm] 就绪（WSLg 原生窗口）。DISPLAY=:0，窗口由客户端按需拉起"
-fi
+echo "[claude-vm] 就绪（串流桌面）。noVNC: ${NOVNC_BIND:-127.0.0.1}:${NOVNC_PORT:-6080}"
 echo "[claude-vm] 工作区已挂载到 /workspace"
-# wait 会一直等到最后一个后台子进程结束：
-#   · desktop 模式 —— Xtigervnc / websockify / openbox 天然常驻
-#   · wslg 模式 —— 上面显式放了 sleep infinity，否则窗口会随会话一起消失
+# wait 会一直等到最后一个后台子进程结束；上面显式放了 sleep infinity
+# 把会话兜住，否则任一桌面组件退出就会让整个发行版变 Stopped。
+wait
 wait

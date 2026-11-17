@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Claude VM · 环境检查报告</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body class="rp-page">
+  <div class="rp-wrap">
+    <div class="cp-card">
+      <div class="cp-head">
+        <div>
+          <div class="cp-title">环境检查报告</div>
+          <div class="cp-sub" id="cpSub">对照风控维度逐项核对镜像、出口与指纹；此窗口不影响桌面使用</div>
+        </div>
+      </div>
+
+      <div id="cpVerdict" class="cp-verdict"></div>
+      <div id="cpBody" class="cp-body"></div>
+      <pre id="cpRaw" class="cp-raw" hidden></pre>
+
+      <div class="cp-foot">
+        <button id="cpRerun" class="btn ghost">重新检测</button>
+        <button id="cpFilter" class="btn ghost" hidden>显示全部</button>
+        <button id="cpRawToggle" class="btn ghost" disabled>原始输出</button>
+        <button id="cpExport" class="btn ghost" disabled>导出 HTML 报告</button>
+        <span class="rp-spacer"></span>
+        <span class="rp-note" id="rpNote" role="status"></span>
+      </div>
+    </div>
+  </div>
+  <script src="report.js"></script>
+</body>
+</html>

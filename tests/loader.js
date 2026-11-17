@@ -4,8 +4,10 @@
 // 为什么不直接 require main.js：它是 Electron 主进程模块，顶部 require('electron')，
 // 在纯 Node 环境会立刻抛错。理想态是把纯函数抽到独立 lib/ 模块（见 tests/README.md
 // 的重构建议）；在那之前用「起止标记切片 + new Function 注入依赖」过渡。
-// 关键约束：每个 start/end 标记在 main.js 里必须唯一，loader 启动时全量校验，
-// 源码改动破坏了切片会得到明确的失败信息，而不是静默测错对象。
+//
+// 2.0 起大量纯函数（节点解析 / 画像 / base64 分块）已经抽到 app/lib/，
+// 可直接在单测里 require，loader 只剩下面这几段主进程内联逻辑。
+// 关键约束：每个 start/end 标记在 main.js 里必须唯一，loader 启动时全量校验。
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -21,10 +23,6 @@ const SEGMENTS = {
     start: 'function decodeChunk(buf) {', end: 'function log(tag, msg) {',
     fns: ['decodeChunk'], deps: [],
   },
-  redact: {
-    start: '// 代理地址里可能带 user:pass', end: 'function loadConfig()',
-    fns: ['redact'], deps: [],
-  },
   normalizeWinPath: {
     start: '// 路径里混进多余的斜杠', end: 'function saveConfig(cfg) {',
     fns: ['normalizeWinPath'], deps: [],
@@ -35,7 +33,7 @@ const SEGMENTS = {
   },
   defaultConfig: {
     start: 'function defaultConfig() {', end: 'function rootfsPath()',
-    fns: ['defaultConfig'], deps: ['path', 'app', 'DEFAULT_WHITELIST'],
+    fns: ['defaultConfig'], deps: ['path', 'app'],
   },
   toWslPath: {
     start: 'function toWslPath(p) {', end: '// ---------- WSL 调用 ----------',
@@ -45,35 +43,13 @@ const SEGMENTS = {
     start: 'function cleanWslList(s) {', end: 'async function distroExists()',
     fns: ['cleanWslList'], deps: [],
   },
-  proxyFns: {
-    start: 'function isLoopbackHost(h) {', end: '// ---------- 本机代理自动探测 ----------',
-    fns: ['isLoopbackHost', 'stripSlash', 'parseProxy'], deps: [],
-  },
-  probeJs: {
-    start: 'const PROBE_JS =', end: '// 返回 { reach: [可达地址], err:',
-    fns: ['PROBE_JS'], deps: [],
-  },
-  probeHosts: {
-    start: 'async function wslProbeHosts(', end: '// 容器内可见的',
-    fns: ['wslProbeHosts'], deps: ['runWsl', 'PROBE_JS', 'DISTRO'],
-  },
-  routeFns: {
-    start: 'function hexIpLE(hex) {', end: 'async function wslHostCandidates()',
-    fns: ['hexIpLE', 'ipToInt', 'intToIp', 'parseRouteTable'], deps: [],
-  },
-  upstream: {
-    start: 'const ROUTE_MARK =', end: '// ---------- 运行时操作 ----------',
-    fns: ['ROUTE_MARK', 'PROXY_MARK', 'parseRouteTable', 'wslHostCandidates', 'resolveUpstream'],
-    deps: ['isLoopbackHost', 'parseProxy', 'stripSlash', 'runWsl', 'DISTRO',
-      'waitPort', 'log', 'ROUTER_PORT', 'wslProbeHosts', 'PROBE_JS'],
-  },
   runtimeAlive: {
-    start: 'async function runtimeAlive(displayMode', end: '// 影响运行时行为的配置项',
-    fns: ['runtimeAlive'], deps: ['runWsl', 'DISTRO', 'log', 'waitPort', 'NOVNC_PORT'],
+    start: 'async function runtimeAlive()', end: '// 影响运行时行为的配置项',
+    fns: ['runtimeAlive'], deps: ['runWsl', 'log', 'waitPort', 'NOVNC_PORT'],
   },
   cfgFingerprint: {
     start: '// 影响运行时行为的配置项', end: 'const readLastFingerprint =',
-    fns: ['cfgFingerprint'], deps: ['RUNTIME_REV'],
+    fns: ['cfgFingerprint'], deps: ['RUNTIME_REV', 'tunConfig', 'userDir'],
   },
 };
 

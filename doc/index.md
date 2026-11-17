@@ -4,6 +4,24 @@
 > 原始全文不可变副本：[`raw/开发交接-原始全文-20261116.md`](raw/开发交接-原始全文-20261116.md)。
 > 拆分的创建与变更记录见 [`log.md`](log.md)。
 
+## ⚠️ 当前架构（2.0.0，2026-11-16 起）
+
+**先读 [`decisions/05-2.0重构-单态化.md`](decisions/05-2.0重构-单态化.md)。**
+2.0 做了一次减法，下面目录里描述「外部代理链路」「wslg 模式」「TUN 并存开关」的页面
+是 1.0.x 的历史档案，读的时候请注意：
+
+| 已删除 | 现在 |
+| --- | --- |
+| `UPSTREAM_PROXY` / `proxyMode` / `whitelist` / `proxy-router.js` / `--proxy-server` | 容器内 mihomo + TUN 是**唯一**网络路径 |
+| wslg 原生窗口模式 / `#wslgPanel` / 四个 wslg IPC | 只有 desktop 串流桌面 |
+| `tunMode` 并存开关 | TUN 恒开，无 YAML 则拒绝启动 |
+| 7 个地区的 `region` 下拉 | `personas.js` 两套画像（台北 / 美国） |
+| 主窗口自检遮罩 `#checkPanel` | 独立 `report.html` 窗口，可导出 HTML |
+| `displayMode` / `region` 配置字段 | `persona` / `selectedNode` / `clashYamlPath` |
+
+`pitfalls/` 里的 22 个坑按约定**逐字保留历史原文**，其中坑 3/7/8/15/17 等描述的是
+已删除链路，作为「为什么不再这么做」的依据留存，不代表当前实现。
+
 ## 维护约定
 
 - **单一信息源**：机制与「当前正确做法」写在本索引列出的主题文档；**踩坑实录原文**集中在 [`pitfalls/`](pitfalls/index.md)，主题文档用链接引用坑编号，不复制全文。
@@ -12,9 +30,15 @@
 - **新增知识**：外部调研归 `references/`，决策结论归 `decisions/`，两者都回链到主题文档；随后在 `log.md` 追加一条。
 - **坑编号**：全局唯一、只增不改；新增坑追加到 [`pitfalls/index.md`](pitfalls/index.md) 速查表并在测试里加断言。
 
+## 当前架构入口
+
+- [2.0 重构：单态化决策](decisions/05-2.0重构-单态化.md) — 四条决策、删除清单、保留项（**最先读**）
+- [TUN 与 Mihomo](network/02-TUN与Mihomo.md) — 唯一网络路径的实现与四条硬约束
+- [身份与画像](security/01-身份与画像.md) — 两套画像的取舍与「不做伪造」的边界
+
 ## 概览 · overview
 
-- [项目概览](overview/00-项目概览.md) — 两个工程、版本、主路径方向（WSLg 优先）、fail-closed 与画像定位
+- [项目概览](overview/00-项目概览.md) — 两个工程、版本、1.0.x 主路径方向（含已删的 WSLg）、fail-closed 与画像定位
 - [环境与启动](overview/01-环境与启动.md) — 环境要求、rootfs 获取两条路、npm 启动与首次导入耗时
 - [目录地图与 IPC](overview/02-目录地图与IPC.md) — 代码树逐文件职责、界面与主进程的关键 channel
 
@@ -58,7 +82,8 @@
 
 ## 架构决策 · decisions
 
-- [显示模式选型](decisions/01-显示模式选型.md) — 为什么 WSLg 是主路径、noVNC 退居可选
+- **[2.0 重构：单态化](decisions/05-2.0重构-单态化.md) — 当前架构的四条决策与删除清单**
+- [显示模式选型](decisions/01-显示模式选型.md) — 1.0.x：为什么 WSLg 是主路径（2.0 已删，历史依据）
 - [输入法演进](decisions/02-输入法演进.md) — IBus→lxterminal→fcitx5 的取舍与「换壳不换引擎」
 - [网络架构演进](decisions/03-网络架构演进.md) — netlink 熔断→容器内置内核 + TUN 的架构纠正
 - [平台与范围取舍](decisions/04-平台与范围取舍.md) — Mac 后端、arm64、指纹浏览器、Claude Cage 的定位

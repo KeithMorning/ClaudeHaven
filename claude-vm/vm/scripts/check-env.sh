@@ -23,24 +23,13 @@ US=$'\x1f'
 PASS=0; WARN=0; FAIL=0; INFO=0
 ITEMS=()
 
-# 运行时是否真的起来了（决定这次自检结论是否有意义）
+# 运行时是否真的起来了（决定这次检查结论是否有意义）
 # 注意：/opt/config/runtime-env 是上次运行留下的，环境停掉后它还在，
 # 所以要认 entrypoint 写的就绪标记 + 会话进程，不能只看文件。
-# 两种显示模式：
-#   wslg    —— 没有 Xtigervnc / websockify，会话靠 sleep infinity 兜住
-#   desktop —— 原有 Xtigervnc + websockify + 6080
-# DISPLAY_MODE 由客户端显式传入（env），旧环境没传则从标记文件回推。
-if [ -z "${DISPLAY_MODE:-}" ] && [ -f /run/claude-vm/ready ]; then
-  DISPLAY_MODE="$(head -1 /run/claude-vm/ready)"
-fi
-DISPLAY_MODE="${DISPLAY_MODE:-desktop}"
+# 2.0 只有一种显示模式：Xtigervnc + openbox + websockify 串流桌面。
 RUNTIME_UP=0
 if [ -f /run/claude-vm/ready ]; then
-  if [ "$DISPLAY_MODE" = "wslg" ]; then
-    pgrep -f "sleep infinity" >/dev/null 2>&1 && RUNTIME_UP=1
-  else
-    { pgrep -x Xtigervnc >/dev/null 2>&1 || pgrep -f "websockify --web" >/dev/null 2>&1; } && RUNTIME_UP=1
-  fi
+  { pgrep -x Xtigervnc >/dev/null 2>&1 || pgrep -f "websockify --web" >/dev/null 2>&1; } && RUNTIME_UP=1
 fi
 
 # add <分组> <状态> <名称> <实测值> <说明> <建议>
@@ -58,7 +47,7 @@ gtitle() {
   case "$1" in
     region)      echo "地区与语言" ;;
     desktop)     echo "浏览器与运行环境" ;;
-    network)     echo "网络与代理" ;;
+    network)     echo "内核与出口" ;;
     consistency) echo "一致性判断" ;;
     *)           echo "$1" ;;
   esac
@@ -73,6 +62,9 @@ jesc() {
   s="${s//$'\t'/\\t}"
   printf '%s' "$s"
 }
+
+# 从 ipinfo.io 的 JSON 里取字段（零依赖，仅供出口探测使用）
+_pick() { printf '%s' "$1" | sed -n "s/.*\"$2\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/\1/p"; }
 
 # ------------------------------------------------------------
 # 1. 地区与语言
@@ -149,7 +141,18 @@ if [ -f /opt/scripts/chrome-lang.py ]; then
   _cl_hdr="${_CL[1]:-}"
   _cl_ok="${_CL[2]:-false}"
   _cl_detail="${_CL[3]:-}"
-  _cl_want=$(printf '%s' "${LANG%%.*}" | tr '_' '-')
+  _cl_ui="${_CL[4]:-}"
+  # 期望语言跟画像的 CHROME_LANG 走；老环境没有该变量时才退回从 LANG 推。
+  _cl_want="${CHROME_LANG:-$(printf '%s' "${LANG%%.*}" | tr '_' '-')}"
+  # 浏览器界面语言由 Profile 的 intl.app_locale 决定，--lang 在有旧实例时会被忽略。
+  # 只测 Accept-Language 会「报告全绿、实际界面还是繁中」，所以单独列一项。
+  if [ -n "$_cl_ui" ] && [ "$_cl_ui" != "$_cl_want" ]; then
+    add region fail "浏览器 UI 语言" "$_cl_ui（期望 ${_cl_want}）" \
+      "Chrome 界面语言与画像不一致：切换画像后若仍有旧 Chrome 实例，它会保持旧语言，并在退出时把旧值写回磁盘。" \
+      "点「停止」再「启动」重建会话；新版本启动时会清掉残留 Chrome 并写入 app_locale。"
+  elif [ -n "$_cl_ui" ]; then
+    add region pass "浏览器 UI 语言" "$_cl_ui" "Chrome 界面语言与画像一致。" ""
+  fi
   if [ -z "$_cl_hdr" ]; then
     add region fail "浏览器语言头" "未配置" \
       "Chrome Profile 里没有语言偏好，登录请求会退回 en-US，与系统 ${LANG} 矛盾。" \
@@ -176,25 +179,13 @@ else
     "重新导入环境（删除发行版后重启程序会自动重建）。"
 fi
 
-if [ "$DISPLAY_MODE" = "wslg" ]; then
-  # WSLg 的 :0 是真实图形显示（Weston + XWayland），不是无头环境；
-  # 只是没有 Xtigervnc / websockify，别再按「串流桌面」去要求它们。
-  if [ -n "${DISPLAY:-}" ] && [ "$DISPLAY" = ":0" ]; then
-    add desktop pass "显示会话" "WSLg · DISPLAY=:0" \
-      "Linux 应用以 Windows 原生窗口显示，剪贴板/音频/缩放走 RDP 原生通道，不是无头环境。" ""
-  else
-    add desktop warn "显示会话" "WSLg 但 DISPLAY 异常（${DISPLAY:-未设置}）" \
-      "WSLg 模式下窗口起不来；检查 wsl --version 是否有 WSLg version 一行。" \
-      "确认 Win11 或 Win10 19044+ 且安装商店版 WSL；也可把显示模式切回串流桌面。"
-  fi
-  add desktop info "显示模式" "WSLg 原生窗口" \
-    "日常在独立终端窗口里跑 Claude Code；需要浏览器/完整桌面时切到串流桌面。" ""
-elif [ -n "${DISPLAY:-}" ]; then
-  add desktop pass "桌面会话" "DISPLAY=$DISPLAY" "有真实 X11 桌面，不是无头环境。" ""
+if [ -n "${DISPLAY:-}" ]; then
+  add desktop pass "桌面会话" "DISPLAY=$DISPLAY（串流桌面）" \
+    "Xtigervnc :1 + openbox + noVNC 是 2.0 唯一的显示模式，有真实 X11 桌面，不是无头环境。" ""
 else
   add desktop warn "桌面会话" "无 DISPLAY" \
     "没有图形会话，Chrome 可能以 headless 方式运行，容易被判定为自动化。" \
-    "先点「启动虚拟环境」，等桌面出现后再自检。"
+    "先点「启动虚拟环境」，等桌面出现后再运行检查。"
 fi
 
 # Claude Code CLI 是否真的能跑（自更新中断会把包换成报错桩，外表看不出来）
@@ -271,186 +262,124 @@ else
 fi
 
 # ------------------------------------------------------------
-# 3. 网络与代理
+# 3. 容器内内核与出口（2.0：mihomo + TUN 全量接管）
+#    所有探测一律裸 curl —— 没有代理端口可填，流量自然进 TUN。
 # ------------------------------------------------------------
-ROUTER="http://127.0.0.1:${PROXY_ROUTER_PORT:-7890}"
-UP="${UPSTREAM_PROXY:-}"
-PROXY_ARG=""
-[ -n "$UP" ] && PROXY_ARG="-x $UP"
+TUN_NODE="${TUN_NODE:-}"
+CORE_UP=0
+pgrep -x mihomo >/dev/null 2>&1 && CORE_UP=1
+META_UP=0
+grep -qE '^ *Meta:' /proc/net/dev 2>/dev/null && META_UP=1
 
-# 全量模式：PROXY_MODE=all 时整台机器都从上游出网（上游是用户本机的代理软件）。
-ALL_ON=0
-if [ -n "$UP" ] && [ "${PROXY_MODE:-all}" = "all" ]; then ALL_ON=1; fi
-
-_pick() { printf '%s' "$1" | sed -n "s/.*\"$2\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/\1/p"; }
-
-if [ -n "$UP" ]; then
-  # 全量模式直接用上游，只有白名单模式才经过本地路由
-  if [ "$ALL_ON" = 1 ]; then
-    PROXY_EP="$UP"; PROXY_NAME="代理接管"
-  else
-    PROXY_EP="$ROUTER"; PROXY_NAME="本地路由"
-  fi
-
-  # 比较时忽略首尾空白与尾斜杠：两者只差一个 "/" 不该报成「未接管」。
-  _lp_cmp=$(printf '%s' "$(cat /opt/config/local-proxy 2>/dev/null)" | tr -d '[:space:]' | sed 's:/*$::')
-  _ep_cmp=$(printf '%s' "$PROXY_EP" | tr -d '[:space:]' | sed 's:/*$::')
-  if [ "$_lp_cmp" = "$_ep_cmp" ]; then
-    add network pass "$PROXY_NAME" "已接管 → $UP" \
-      "Claude Code 与 Chrome 的流量都从这里出网。" ""
-  else
-    add network warn "$PROXY_NAME" "未接管（HTTPS_PROXY=${HTTPS_PROXY:-空}）" \
-      "代理已配置，但程序拿到的代理地址不是它，流量可能绕开代理直连。" \
-      "重启虚拟环境，让 entrypoint 重新注入代理变量。"
-  fi
-
-  # 浏览器代理参数：这一项是血换来的 —— Chrome 的 --proxy-server 只认 host:port，
-  # 带尾斜杠会直接 ERR_NO_SUPPORTED_PROXIES，而 curl 完全不受影响。只测 curl 的话
-  # 会出现「自检全绿、浏览器一个页面都打不开」的分裂状态。
-  _lp=$(cat /opt/config/local-proxy 2>/dev/null | tr -d '\r\n')
-  if [ -z "$_lp" ]; then
-    add network warn "浏览器代理参数" "缺失" \
-      "没读到代理地址文件，Chrome 可能不走代理。" "重启虚拟环境以重新生成。"
-  elif printf '%s' "$_lp" | grep -Eq '^(https?|socks5h?|socks4)://[^/]+$'; then
-    add network pass "浏览器代理参数" "$_lp" \
-      "写法可被 Chrome 直接使用（协议受支持、无多余斜杠）。" ""
-  else
-    add network fail "浏览器代理参数" "$_lp" \
-      "这个写法 Chrome 不接受，页面会显示 ERR_NO_SUPPORTED_PROXIES。" \
-      "改成 http://host:port（末尾不要带斜杠）。"
-  fi
-
-  if [ "$ALL_ON" = 1 ]; then
-    # 全量经「用户本机代理」出网（Clash / v2ray 之类）。
-    # 这里要确认的是两件事：① 代理真的能出网；② 出口确实变了 ——
-    # 如果经代理和直连拿到同一个 IP，说明流量根本没进代理，
-    # 那 Chrome 里看到的仍是本地出口，Claude 那边也会看到不一致的地理。
-    _via=$(curl -s --max-time 12 -x "$PROXY_EP" https://ipinfo.io/json 2>/dev/null)
-    _vip=$(_pick "$_via" ip); _vorg=$(_pick "$_via" org); _vcity=$(_pick "$_via" city)
-    _direct=$(curl -s --max-time 8 --noproxy '*' https://ipinfo.io/json 2>/dev/null)
-    _dip=$(_pick "$_direct" ip)
-
-    if [ -z "$_vip" ]; then
-      add network fail "统一出口" "经代理访问外网无回包" \
-        "本地路由在跑，但上游代理没有把请求送出去。多半是代理软件没开、端口填错，或不允许局域网连接。" \
-        "确认代理软件正在运行且已开启「允许局域网连接（Allow LAN）」；再点「自动检测」重新识别端口。"
-    elif [ -n "$_dip" ] && [ "$_vip" = "$_dip" ]; then
-      # 直连和走代理拿到同一个地址，通常是代理软件开了 TUN / 全局模式，
-      # 整机流量都被接管 —— 这是好事，不是故障。只有当出口仍在本地
-      # 运营商网段时才有问题，但那需要另一份参照才能判断，这里不猜。
-      add network pass "统一出口" "全部流量同一出口（${_vip}${_vcity:+ · $_vcity}）" \
-        "直连与经代理拿到的是同一个地址，说明整机流量已被代理接管（TUN / 全局模式），不存在分叉。" ""
-    else
-      add network pass "统一出口" "全部流量经代理出网（$_vip${_vcity:+ · $_vcity}${_vorg:+ · $_vorg}）" \
-        "虚拟机所有出站请求都从这一个出口出去：IP、ASN、地理、Cloudflare 边缘节点彼此自洽。" ""
-    fi
-  else
-  _direct=$(curl -s --max-time 8 --noproxy '*' https://ipinfo.io/json 2>/dev/null)
-  _via=$(curl -s --max-time 8 -x "$ROUTER" https://ipinfo.io/json 2>/dev/null)
-  _dip=$(_pick "$_direct" ip)
-  _vip=$(_pick "$_via" ip)
-  if [ -z "$_vip" ]; then
-    add network warn "白名单隔离" "本地路由无响应" \
-      "经路由访问普通站点没有回包，说明本地路由没有在运行。" \
-      "重新点「启动虚拟环境」；若仍无响应，先「停止」再「启动」。"
-  elif [ -z "$_dip" ]; then
-    add network info "白名单隔离" "无法比对（直连不通）" \
-      "本机直连探测失败，可能当前网络受限。" ""
-  elif [ "$_vip" = "$_dip" ]; then
-    add network pass "白名单隔离" "非 Anthropic 流量未走代理" \
-      "经路由访问普通网站时出口与直连一致，说明分流生效、没有泄漏。" ""
-  else
-    add network fail "白名单隔离" "疑似泄漏（路由=$_vip 直连=$_dip）" \
-      "非白名单流量也被送进了代理，所有流量共用同一出口。" \
-      "检查白名单格式是否被改坏（应为 \".anthropic.com,.claude.com,...\"）。"
-  fi
-  fi
-
-  # Anthropic 是否经代理可达
-  _code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 -x "$PROXY_EP" https://api.anthropic.com 2>/dev/null)
-  if [ -n "$_code" ] && [ "$_code" != "000" ]; then
-    add network pass "Anthropic 可达" "HTTP $_code" \
-      "经代理（$PROXY_EP）访问 api.anthropic.com 成功，链路完整。" ""
-  else
-    add network fail "Anthropic 可达" "无响应" \
-      "经代理（$PROXY_EP）访问 api.anthropic.com 失败，Claude Code 会直接不可用。" \
-      "检查上游代理是否在运行、端口是否正确、是否开启「允许局域网连接」。"
-  fi
-  # claude.ai 是否被 Cloudflare 人机校验拦着
-  # 注意这不是「网络不通」：CF 会回 403 + `cf-mitigated: challenge`，而且响应头带
-  # `cross-origin-resource-policy: same-origin` —— 浏览器里任何跨域探活都会被直接判失败，
-  # 表现得和「超时」一模一样。公开检测站给的分就是从这里来的，跟延迟无关。
-  _ua='Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36'
-  _ca=$(curl -sI --max-time 10 -A "$_ua" -x "$PROXY_EP" https://claude.ai/ 2>/dev/null)
-  if printf '%s' "$_ca" | grep -qi 'cf-mitigated:[[:space:]]*challenge'; then
-    add network warn "claude.ai 人机校验" "被 CF 挑战（403）" \
-      "Cloudflare 把当前节点判为可疑，会先弹人机校验；浏览器的跨域探活会被它的 CORP 头挡掉，看起来像超时。" \
-      "换住宅/ISP 节点可显著缓解；网页里遇到验证码属正常，通过即可继续登录。"
-  elif printf '%s' "$_ca" | grep -qE '^HTTP/[0-9.]+ 200'; then
-    add network pass "claude.ai 人机校验" "未触发" \
-      "claude.ai 直接返回页面，当前节点没有被判为可疑。" ""
-  fi
-
-  # 多源出口一致性：同一时刻问三个独立源，它们必须给出同一个 IP。
-  # 这条判据是我们自己算的，不依赖任何检测站 —— 「有没有分叉」必须能自己复现
-  #（公开检测站那条 +15 是它自己没带客户端 IP 去查，不作数）。
-  _s1=$(curl -s --max-time 8 -x "$PROXY_EP" https://api.ipify.org 2>/dev/null | tr -d '[:space:]')
-  _s2=$(curl -s --max-time 8 -x "$PROXY_EP" https://ipinfo.io/ip 2>/dev/null | tr -d '[:space:]')
-  _s3=$(curl -s --max-time 8 -x "$PROXY_EP" https://api.ip.sb/ip 2>/dev/null | tr -d '[:space:]')
-  _uniq=$(printf '%s\n%s\n%s\n' "$_s1" "$_s2" "$_s3" | grep -E '^[0-9a-fA-F:.]{7,}$' | sort -u | tr '\n' ' ')
-  _n=$(printf '%s' "$_uniq" | wc -w | tr -d ' ')
-  if [ "${_n:-0}" -eq 0 ]; then
-    add network warn "多源出口一致性" "无法验证" \
-      "三个 IP 情报源都没有返回地址，可能代理只放行了部分域名。" ""
-  elif [ "$_n" -eq 1 ]; then
-    add network pass "多源出口一致性" "三源一致 → ${_uniq% }" \
-      "ipify / ipinfo / ip.sb 在同一时刻给出同一个出口，说明没有分叉。" ""
-  else
-    add network fail "多源出口一致性" "出现 ${_n} 个出口：${_uniq% }" \
-      "不同网站看到的出口 IP 不一致，这是真正的分叉（规则把部分域名送去了别的节点）。" \
-      "把代理切到全局/统一出口，或检查「按域名分流」规则。"
-  fi
-
-  # 系统 DNS：只判断「有没有企业后缀污染」以及「本地解析是否真的影响业务」。
-  # 预演结论：走 HTTP 代理的 HTTPS 用 CONNECT，域名在**代理侧**解析；本地 getent 的结果
-  # 根本不参与。熔断删掉默认路由后，本地给的内网黑洞地址直连也不可达，因此不是泄漏点。
-  # 所以不再建议改成 1.1.1.1 / 8.8.8.8 —— 那样反而会在熔断后造成解析超时。
-  _ns=$(awk '/^nameserver/{print $2; exit}' /etc/resolv.conf 2>/dev/null)
-  _res=$(getent hosts claude.ai 2>/dev/null | awk '{print $1; exit}')
-  _sfx=$(grep -E '^(search|domain)[[:space:]]' /etc/resolv.conf 2>/dev/null | head -1)
-  if [ -n "$_sfx" ]; then
-    add network warn "系统 DNS" "残留企业后缀 ${_sfx#* }" \
-      "WSL 把宿主网卡的 DNS 搜索域写进了 resolv.conf。检测站看不到它，但它会混进诊断包与应用日志，暴露企业内网归属。" \
-      "重启环境让 entrypoint 自动清掉；或在 /etc/wsl.conf 加 [network] generateResolvConf=false。"
-  else
-    case "$_res" in
-      "") add network info "系统 DNS" "本地未解析（nameserver ${_ns:-未知}）" \
-            "本地 DNS 解析不出 claude.ai；走代理的业务流量由 CONNECT 远程解析，不受影响。" "" ;;
-      10.*|127.*|192.168.*|172.1[6-9].*|172.2[0-9].*|172.3[01].*)
-          add network info "系统 DNS" "本地 → $_res（已隔离）" \
-            "本地 DNS 把域名指向内网黑洞，但走代理的 HTTPS 在代理侧解析，且熔断后该地址直连不可达，不构成泄漏。无需改 nameserver。" "" ;;
-      *)  add network pass "系统 DNS" "$_res（无企业后缀）" \
-            "本地解析正常，resolv.conf 也没有宿主继承的企业搜索域。" "" ;;
-    esac
-  fi
-
-  # 代理远程解析：真的发一次经代理的 HTTPS，证明域名是在代理侧解析的
-  if [ -n "$UP" ]; then
-    _rcode=$(curl -s -o /dev/null -w '%{http_code}' --connect-timeout 4 --max-time 10 \
-             -x "$UP" https://api.anthropic.com 2>/dev/null)
-    if [ -n "$_rcode" ] && [ "$_rcode" != "000" ]; then
-      add network pass "代理远程解析" "HTTP $_rcode（CONNECT 成功）" \
-        "域名由代理侧解析，本地 /etc/resolv.conf 的结果不参与业务流量；DNS 不会暴露本机网络归属。" ""
-    else
-      add network warn "代理远程解析" "经代理连接失败" \
-        "代理不可用或不允许 CONNECT，业务流量此刻无法出网。" \
-        "检查上游代理端口与 Allow LAN；熔断状态下网络会保持切断，不会回落直连。"
-    fi
-  fi
+if [ "$RUNTIME_UP" != "1" ]; then
+  add network info "容器内内核" "环境未运行" \
+    "环境启动后才会拉起 mihomo 内核与 TUN 网卡。" \
+    "先点「启动虚拟环境」，再运行检查。"
+elif [ "$CORE_UP" = "1" ]; then
+  add network pass "容器内内核" "mihomo 运行中 · 节点 ${TUN_NODE:-自动}" \
+    "内核随镜像运行在虚拟环境内部，宿主代理软件不参与运行时链路。" ""
 else
-  add network info "代理" "未配置（全部直连）" \
-    "所有流量直接出网，出口即本机网络所在地区。" \
-    "若本机网络不在 Claude 支持地区，建议在左侧填入代理地址。"
+  add network fail "容器内内核" "mihomo 未运行" \
+    "内核没起来时 TUN 与策略路由一起消失，而默认路由已被熔断，网络应立刻全断。" \
+    "查看 /run/claude-vm/tun-core.log；确认已导入 YAML 并选中节点，再「停止 → 启动」。"
+fi
+
+if [ "$RUNTIME_UP" != "1" ]; then
+  add network info "TUN 网卡" "环境未运行" "环境启动后才会创建 Meta 网卡。" ""
+elif [ "$META_UP" = "1" ]; then
+  add network pass "TUN 网卡" "Meta 已就绪" \
+    "table 2022 覆盖路由把全部流量送进 TUN，DNS/UDP/IPv6 一并接管。" ""
+else
+  add network fail "TUN 网卡" "Meta 不存在" \
+    "没有 TUN 网卡说明流量没被接管，此时不应放行业务。" \
+    "检查 tun-core.sh 日志与 GeoIP 数据库是否随镜像预置。"
+fi
+
+if [ "$RUNTIME_UP" = "1" ]; then
+  _dns=$(awk '/^nameserver/{print $2; exit}' /etc/resolv.conf 2>/dev/null)
+  _fake=$(getent hosts api.ipify.org 2>/dev/null | awk '{print $1; exit}')
+  if [ "$_dns" = "127.0.0.1" ]; then
+    if printf '%s' "${_fake:-}" | grep -q '^198\.19\.'; then
+      add network pass "DNS 归属" "127.0.0.1 · fake-ip ${_fake}" \
+        "DNS 由容器内内核自己接管，宿主 DNS 代理与它的 fake-ip 段都插不进来。" ""
+    else
+      add network warn "DNS 归属" "127.0.0.1 · 解析 ${_fake:-无}" \
+        "nameserver 已指向内核，但 getent 没落到 198.19.x 的 fake-ip 段，需要确认 DNS 劫持是否生效。" \
+        "检查 tun-core.sh 的 ready 标记与 mihomo 的 dns 段。"
+    fi
+  else
+    add network fail "DNS 归属" "nameserver ${_dns:-未知}" \
+      "DNS 没有收进容器内内核，域名解析可能走 WSL 的 DNS 代理，出口地区会与 API 不一致。" \
+      "确认 tun-core.sh 已切 resolv.conf；必要时「停止 → 启动」重建会话。"
+  fi
+fi
+
+add network info "选中节点" "${TUN_NODE:-（未选择）}" \
+  "全量单节点模式：所有流量走这一个节点，订阅原有的 proxy-groups / rules 被忽略。" \
+  "换节点会进配置指纹，点「停止 → 启动」后生效。"
+
+# 出口一致性：同一时刻问三个独立源，必须给出同一个 IP
+_s1=$(curl -s --max-time 8 https://api.ipify.org 2>/dev/null | tr -d '[:space:]')
+_s2=$(curl -s --max-time 8 https://ipinfo.io/ip 2>/dev/null | tr -d '[:space:]')
+_s3=$(curl -s --max-time 8 https://api.ip.sb/ip 2>/dev/null | tr -d '[:space:]')
+_uniq=$(printf '%s\n%s\n%s\n' "$_s1" "$_s2" "$_s3" | grep -E '^[0-9a-fA-F:.]{7,}$' | sort -u | tr '\n' ' ')
+_n=$(printf '%s' "$_uniq" | wc -w | tr -d ' ')
+if [ "${_n:-0}" -eq 0 ]; then
+  add network warn "多源出口一致性" "无法验证" \
+    "三个 IP 情报源都没有返回地址，内核或选中节点此刻不可用。" \
+    "检查节点是否可达、mihomo 日志是否有连接错误。"
+elif [ "$_n" -eq 1 ]; then
+  add network pass "多源出口一致性" "三源一致 → ${_uniq% }" \
+    "ipify / ipinfo / ip.sb 在同一时刻给出同一个出口，说明没有分叉。" ""
+else
+  add network fail "多源出口一致性" "出现 ${_n} 个出口：${_uniq% }" \
+    "不同网站看到的出口 IP 不一致，说明分流规则没被忽略、或节点链路异常。" \
+    "确认 YAML 已被 tun-merge.py 改成全量单节点。"
+fi
+
+# 直连封锁：显式绕过应用层代理，包仍会被 TUN 抓走，所以这里只作参考；
+# 真正的 fail-closed 证据是「main 表没有默认路由」，见下一节的 netlink 查询。
+if curl -s --max-time 4 --noproxy '*' https://ipinfo.io/ip >/dev/null 2>&1; then
+  add network pass "出口可达性" "裸 curl 可出网" \
+    "应用不需要任何显式代理配置，流量由 TUN 在网络层接管。" ""
+else
+  add network warn "出口可达性" "裸 curl 无回包" \
+    "内核可能没起来、节点不可达，或熔断正处于预检未通过状态。" \
+    "看 /run/claude-vm/net-guard.state 的 reason 与检查报告的网络分项。"
+fi
+
+# Anthropic 可达性（裸 curl）
+_code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 https://api.anthropic.com 2>/dev/null)
+if [ -n "$_code" ] && [ "$_code" != "000" ]; then
+  add network pass "Anthropic 可达" "HTTP $_code" \
+    "经容器内内核访问 api.anthropic.com 成功，链路完整。" ""
+else
+  add network fail "Anthropic 可达" "无响应" \
+    "Claude Code 会直接不可用。检查选中的节点是否可达、出口是否落在受限地区。" \
+    "在设置里换一个节点后「停止 → 启动」。"
+fi
+
+# claude.ai 是否被 Cloudflare 人机校验拦着
+_ua='Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36'
+_ca=$(curl -sI --max-time 10 -A "$_ua" https://claude.ai/ 2>/dev/null)
+if printf '%s' "$_ca" | grep -qi 'cf-mitigated:[[:space:]]*challenge'; then
+  add network warn "claude.ai 人机校验" "被 CF 挑战（403）" \
+    "Cloudflare 把当前节点判为可疑；跨域探活会被 CORP 头挡掉，看起来像超时。" \
+    "换住宅/ISP 节点可显著缓解；网页里遇到验证码通过即可继续登录。"
+elif printf '%s' "$_ca" | grep -qE '^HTTP/[0-9.]+ 200'; then
+  add network pass "claude.ai 人机校验" "未触发" \
+    "claude.ai 直接返回页面，当前节点没有被判为可疑。" ""
+fi
+
+# 系统 DNS：只判断有没有企业后缀污染
+_sfx=$(grep -E '^(search|domain)[[:space:]]' /etc/resolv.conf 2>/dev/null | head -1)
+if [ -n "$_sfx" ]; then
+  add network warn "系统 DNS" "残留企业后缀 ${_sfx#* }" \
+    "WSL 把宿主网卡的 DNS 搜索域写进了 resolv.conf，会混进诊断包与应用日志。" \
+    "重启环境让 entrypoint 自动清掉；或在 /etc/wsl.conf 加 [network] generateResolvConf=false。"
+else
+  add network pass "系统 DNS" "127.0.0.1（无企业后缀）" \
+    "DNS 由容器内内核接管，没有宿主继承的企业搜索域。" ""
 fi
 
 # ------------------------------------------------------------
@@ -474,21 +403,21 @@ _GUARD_TS="$([ -f "$_GS" ] && _kv ts || echo 0)"
 case "$_GUARD_STATE" in
   guarded)
     add network pass "网络熔断" "已锁定（fail-closed）" \
-      "默认路由已移除、IPv6 已关闭：非代理目标内核直接不可达，代理断开时不会回落到本机直连。" "" ;;
+      "默认路由已移除、IPv6 已关闭：内核退出时 TUN 与策略路由一起消失，立刻全断，不会回落到本机直连。" "" ;;
   blocked)
     add network fail "网络熔断" "已封锁 · $_GUARD_REASON" \
-      "$_GUARD_MSG" "按提示修好代理后，点「停止」再「启动」重新预检；这期间网络保持切断。" ;;
+      "$_GUARD_MSG" "按提示修好节点/内核后，点「停止」再「启动」重新预检；这期间网络保持切断。" ;;
   proxy_down)
     add network warn "网络熔断" "代理断开 · 网络已切断" \
-      "代理探活连续失败，但路由封锁仍在，流量不会改走本机直连（这正是预期保护）。" \
-      "检查代理软件是否还在运行；恢复后看门狗会自动重跑预检。" ;;
+      "内核链路探活连续失败，但路由封锁仍在，流量不会改走本机直连（这正是预期保护）。" \
+      "检查 mihomo 与选中节点；恢复后看门狗会自动重跑预检。" ;;
   off)
     add network fail "网络熔断" "已关闭（NET_GUARD=off）" \
-      "熔断被显式关闭，代理一旦断开，流量会直接走本机网络出网，真实环境会暴露。" \
+      "熔断被显式关闭，内核一旦退出，流量可能走本机网络出网，真实环境会暴露。" \
       "在高级设置里把「网络熔断」改回 strict（推荐）。" ;;
   *)
     add network warn "网络熔断" "守卫未运行" \
-      "没有读到 net-guard.state，无法确认网络是否被强制约束在代理链路上。" \
+      "没有读到 net-guard.state，无法确认默认路由是否已被移除。" \
       "点「停止」再「启动」让 entrypoint 拉起 net-guard；反复如此说明脚本没同步成功。" ;;
 esac
 
@@ -500,29 +429,29 @@ if [ "$_locked" = "true" ] && [ "$_v6off" = "true" ]; then
     "内核路由表里没有直连出口；只封 IPv4 而漏掉 IPv6 是最常见的泄漏口，这里一并堵住。" ""
 else
   add network fail "直连封锁验证" "IPv4 locked=${_locked:-未知} / IPv6 off=${_v6off:-未知}" \
-    "网络层没有完全封锁，代理断开时流量可能从直连或 IPv6 出网。" \
+    "网络层没有完全封锁，内核退出时流量可能从直连或 IPv6 出网。" \
     "点「停止」再「启动」让 net-guard 重新熔断；反复失败请确认以 root 运行、CAP_NET_ADMIN 未被禁用。"
 fi
 
 if curl -s --max-time 4 --noproxy '*' https://ipinfo.io/ip >/dev/null 2>&1; then
   add network fail "直连泄漏实测" "仍可出网（高危）" \
-    "显式绕过代理后依然能访问外网，说明存在没走代理的流量。" \
+    "绕过应用层代理后依然能出网；TUN 模式下这是正常的（流量被网卡抓走），需结合 main 表默认路由判断。" \
     "立即停止使用并重启虚拟环境；确认 NET_GUARD=strict 且 net-guard 正在运行。"
 else
   add network pass "直连泄漏实测" "已阻断" \
-    "绕过代理的请求无法出网，链路是真正的 fail-closed。" ""
+    "内核未接管时裸请求无法出网，链路是真正的 fail-closed。" ""
 fi
 
 case "$_GUARD_REASON" in
   ok)
     add network pass "代理预检" "通过 · 出口 $([ -f "$_GS" ] && _kv exit_ip || echo 未知)/$([ -f "$_GS" ] && _kv exit_country || echo 未知)" \
-      "代理可达、出口地区安全、多源出口一致、Anthropic 可达，预检通过后网络才允许使用。" "" ;;
+      "内核与 TUN 网卡存活、出口地区安全、多源出口一致、Anthropic 可达，预检通过后网络才允许使用。" "" ;;
   skipped|unknown|"")
     add network info "代理预检" "未执行" \
       "熔断关闭或守卫尚未运行时没有预检结果，此时无法保证代理配置正确。" "" ;;
   *)
     add network fail "代理预检" "$_GUARD_REASON" "$_GUARD_MSG" \
-      "修好代理后重新启动；预检不通过时网络保持切断，不会带病放行。" ;;
+      "修好节点/内核后重新启动；预检不通过时网络保持切断，不会带病放行。" ;;
 esac
 
 _now=$(date +%s)
@@ -534,7 +463,7 @@ if [ -f "$_GS" ] && [ -n "$_GUARD_TS" ] && [ "$_GUARD_STATE" != "off" ]; then
       "点「停止」再「启动」重建会话。"
   else
     add network pass "守卫心跳" "正常（${_age} 秒前刷新）" \
-      "看门狗在持续确认默认路由没有被 WSL 重新加回来。" ""
+      "看门狗在持续确认默认路由没有被 WSL 重新加回来、内核与 TUN 网卡仍在。" ""
   fi
 fi
 fi
@@ -545,13 +474,13 @@ fi
 _IM="${INPUT_METHOD:-off}"
 if [ "$_IM" != "rime" ]; then
   add desktop info "中文输入法" "未启用" \
-    "WSLg 不转发 Windows IME 组合事件；中文可用宿主输入法打好后 Ctrl+Shift+V 粘贴。" ""
+    "串流桌面里中文可用宿主输入法打好后 Ctrl+Shift+V 粘贴，或启用 fcitx5 在虚拟环境内直接输入。" ""
 elif ! ls /usr/lib/*/gtk-3.0/*/immodules/im-fcitx5.so >/dev/null 2>&1; then
   # fcitx5 没有 XIM 前端，缺 GTK 原生模块 = GTK 应用输入直接哑掉
   add desktop warn "中文输入法" "已启用但缺 GTK 输入模块" \
     "没有 fcitx5-frontend-gtk3，lxterminal / Chrome 连不到 fcitx5：终端可能一个中文都打不进。" \
     "点「停止」再「启动」，rime-setup 会按需补装（约 1MB）。"
-elif fcitx5-remote >/dev/null 2>&1; then
+elif [ "$RUNTIME_UP" = "1" ] && fcitx5-remote >/dev/null 2>&1; then
   add desktop pass "中文输入法" "fcitx5 + Rime（GTK 原生）" \
     "输入法跑在虚拟机内部；面板跟手、横排候选，Ctrl+Space 开关、Shift 中英切换。" ""
 else
@@ -560,27 +489,17 @@ else
     "点「停止」再「启动」重建会话；反复失败查看 /tmp/fcitx5.log。"
 fi
 
-# 出口信息：优先经代理探测；代理不通时退回直连，并如实标注
-_egress_via="代理"
-_eg=$(curl -s --max-time 10 $PROXY_ARG https://ipinfo.io/json 2>/dev/null)
+# 出口信息：裸 curl 探测（流量自然进 TUN）
+_eg=$(curl -s --max-time 10 https://ipinfo.io/json 2>/dev/null)
 _eip=$(_pick "$_eg" ip)
-if [ -z "$_eip" ]; then
-  _eg=$(curl -s --max-time 10 --noproxy '*' https://ipinfo.io/json 2>/dev/null)
-  _eip=$(_pick "$_eg" ip)
-  [ -n "$_eip" ] && _egress_via="直连"
-fi
 _ecc=$(_pick "$_eg" country)
 _eorg=$(_pick "$_eg" org)
 _ecity=$(_pick "$_eg" city)
 
 if [ -z "$_eip" ]; then
   add network warn "出口 IP" "无法探测" \
-    "代理与直连都拿不到出口信息，无法判断实际落地地区。" \
-    "确认本机网络与上游代理是否可用。"
-elif [ -n "$UP" ] && [ "$_egress_via" = "直连" ]; then
-  add network warn "出口 IP" "$_eip（直连）" \
-    "代理不通，这是本机直连的出口；Claude Code 实际上无法出网。" \
-    "先修好上游代理（端口、Allow LAN），再看这一项。"
+    "拿不到出口信息，内核或选中节点此刻不可用。" \
+    "检查 tun-core.log 与选中节点的连通性。"
 else
   _edet=""
   [ -n "$_ecity" ] && _edet="位于 $_ecity"
@@ -588,19 +507,27 @@ else
   add network pass "出口 IP" "$_eip" "$_edet" ""
 fi
 
+# 节点延迟：主界面「测延迟」经内核控制 API 实测后落盘，自检只读结果，
+# 不在这里重新发起一轮测速（那会让每次检查多等十几秒）。
+if [ -f /opt/scripts/node-delay.py ]; then
+  _nd_line=$(python3 /opt/scripts/node-delay.py --summary 2>/dev/null)
+  if [ -n "$_nd_line" ]; then
+    add network pass "节点延迟" "$_nd_line" \
+      "经容器内核实测到 gstatic 的往返延迟；「超时」表示该节点当前不可达。" ""
+  else
+    add network warn "节点延迟" "未测" \
+      "还没有节点延迟数据，无法判断当前出口链路快慢。" \
+      "启动环境后在主界面点「测延迟」，或等启动后的自动测速完成。"
+  fi
+fi
+
 # 出口类型：机房 IP 是 Cloudflare 判定自动化的主要依据
 HOSTING_RE='Amazon|Google|Microsoft|Cloudflare|Vultr|Constant Company|Choopa|DigitalOcean|Linode|Hetzner|OVH|Contabo|Tencent|Alibaba|Aliyun|Oracle|Akamai|Leaseweb|M247|Hostinger|Scaleway|UpCloud|ColoCrossing|FranTech|BuyVM|Psychz|Quadranet|Cogent|SoftLayer|Rackspace|Kamatera|Ionos|Gcore|Clouvider|DataCamp|Zenlayer|UCloud|Huawei'
-if [ -n "$_eorg" ] && { [ -z "$UP" ] || [ "$_egress_via" = "代理" ]; }; then
+if [ -n "$_eorg" ]; then
   if printf '%s' "$_eorg" | grep -qiE "$HOSTING_RE"; then
-    if [ "$ALL_ON" = 1 ]; then
-      add network warn "出口类型" "机房 IP（IDC / 云主机）" \
-        "这是你选的代理节点本身的属性，不是本地环境的问题：真的在那种服务器上用 Claude Code 也是这个结果。" \
-        "想换掉只能改用住宅/ISP 节点的代理；在此之前保持时区、语言与节点所在地区一致即可。"
-    else
-      add network warn "出口类型" "机房 IP（IDC / 云主机）" \
-        "Anthropic 与 Cloudflare 会把机房 IP 视为非家庭网络，是当前最明显的风险点。" \
-        "条件允许时换成住宅或 ISP 静态代理，并让它与账号地区一致；这比任何本地改造都有效。"
-    fi
+    add network warn "出口类型" "机房 IP（IDC / 云主机）" \
+      "这是选中的节点本身的属性，不是本地环境的问题。Anthropic 与 Cloudflare 会把机房 IP 视为非家庭网络。" \
+      "想换掉只能改用住宅/ISP 节点；在此之前保持画像内部自洽即可。"
   else
     # 名字不在名单里不等于「家庭宽带」：NTT / Cogent 这类骨干与托管商的段，
     # 检测站照样按 IP 段判数据中心（实测 NTT America 就是 +13）。
@@ -625,8 +552,8 @@ fi
 # 请求头必须伪装完整 —— 少了 Accept / sec-ch-ua / Sec-Fetch-* 这些，它会额外判
 # 「请求头完整性偏低」再扣 8 分，那是 curl 的特征，不是用户的。
 CC_SERVER=0; CC_BROWSER=0; CC_TOTAL=0
-if [ -n "$UP" ] && [ -n "${_eip:-}" ]; then
-  _ccjson=$(curl -s --compressed --max-time 15 -x "$PROXY_EP" \
+if [ -n "${_eip:-}" ] && [ "$CORE_UP" = "1" ]; then
+  _ccjson=$(curl -s --compressed --max-time 15 \
     -A 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36' \
     -H 'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8' \
     -H 'Accept-Language: en-US,en;q=0.9' \
@@ -673,8 +600,8 @@ _ecc_u=$(printf '%s' "${_ecc:-}" | tr 'a-z' 'A-Z')
 case ",$_ecc_u," in
   *,CN,*|*,HK,*|*,MO,*)
     add consistency fail "出口受限地区" "出口 ${_ecc}" \
-      "出口落在 CN/HK/MO 受限名单内，多半是代理规则把该域名直连了。" \
-      "把代理切到全局/统一出口，检查分流规则，然后重启环境。" ;;
+      "出口落在 CN/HK/MO 受限名单内，多半是选中的节点在国内。" \
+      "在设置里换一个境外节点，然后「停止 → 启动」。" ;;
   *)
     if [ -n "$_ecc" ]; then
       add consistency pass "出口地区" "${_ecc}（系统 ${TZ:-未知}）" \
@@ -690,22 +617,22 @@ if [ -n "$_ecc" ]; then
     "两者分属不同地区不构成信号矛盾：挂 VPN 出境是当地用户日常；检测站判的是被点名的中国时区，不是地理匹配。不要为了「对齐」去改系统时区，那反而会制造真正的不一致。" ""
 fi
 
-# 白名单是否覆盖登录所需域名（漏掉会让登录走直连 → 出现「两个国家」）
-WL="${PROXY_WHITELIST:-.anthropic.com,.claude.com,.claude.ai,.claudeusercontent.com,clau.de}"
-_missing=""
-for _d in anthropic.com claude.com claude.ai claudeusercontent.com; do
-  case "$WL" in *"$_d"*) ;; *) _missing="$_missing $_d" ;; esac
-done
-if [ "$ALL_ON" = 1 ]; then
-  add consistency pass "白名单覆盖" "全量模式，无需白名单" \
-    "所有流量都经同一个出口出去，不存在「登录走代理、API 走直连」的矛盾。" ""
-elif [ -z "$_missing" ]; then
-  add consistency pass "白名单覆盖" "登录与 API 域名齐全" \
-    "登录、控制台、API 走同一个代理出口，不会出现地区矛盾。" ""
+# 全量单节点：确认订阅的分流规则已被忽略
+if [ "$CORE_UP" = "1" ] && [ -f /opt/config/mihomo.yaml ]; then
+  if grep -q 'MATCH,ClaudeVM' /opt/config/mihomo.yaml; then
+    add consistency pass "出口规则" "全量单节点 → ${TUN_NODE:-自动}" \
+      "订阅原有的 proxy-groups / rules 已被剥离，所有流量走选中的单一节点，不存在登录与 API 出口分叉。" ""
+  else
+    add consistency warn "出口规则" "未检测到单节点兜底规则" \
+      "生成的内核配置里没有 MATCH,ClaudeVM，订阅的分流规则可能仍在生效。" \
+      "点「停止 → 启动」让 tun-merge.py 重新生成配置。"
+  fi
+elif [ "$RUNTIME_UP" != "1" ]; then
+  add consistency info "出口规则" "环境未运行" "启动后由 tun-merge.py 生成单节点配置。" ""
 else
-  add consistency warn "白名单覆盖" "缺少:$_missing" \
-    "这些域名会走直连，登录流量与 API 流量出口不同，容易被判异常。" \
-    "在左侧白名单里补齐缺失的域名（用逗号分隔）。"
+  add consistency warn "出口规则" "内核配置未生成" \
+    "没有 /opt/config/mihomo.yaml，无法确认出口规则。" \
+    "确认已导入 YAML 并选中节点。"
 fi
 
 # ------------------------------------------------------------

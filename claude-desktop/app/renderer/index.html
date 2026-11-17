@@ -7,226 +7,284 @@
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <div class="app">
-    <!-- 左侧：设置 -->
-    <aside class="sidebar">
-      <div class="brand">
-        <div class="logo">CV</div>
-        <div>
-          <div class="brand-title">Claude VM</div>
-          <div class="brand-sub">隔离虚拟环境 · 原生窗口</div>
+<!-- 线性图标：全部内联，深色框架与浅色弹窗共用 currentColor -->
+<svg class="svg-defs" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+  <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.6 2.5 4 5.6 4 9s-1.4 6.5-4 9c-2.6-2.5-4-5.6-4-9s1.4-6.5 4-9z"/></symbol>
+  <symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 2v20M2 12h20M4.9 4.9l14.2 14.2M19.1 4.9L4.9 19.1"/></symbol>
+  <symbol id="i-term" viewBox="0 0 24 24"><rect x="2.5" y="4" width="19" height="16" rx="2"/><path d="M6.5 9l3 3-3 3M12.5 15h5"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></symbol>
+  <symbol id="i-monitor" viewBox="0 0 24 24"><rect x="2.5" y="4" width="19" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></symbol>
+  <symbol id="i-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4v-.2a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1-2.8-2.8.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.6-1H3v-4h.2a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1 2.8-2.8.1.1a1.7 1.7 0 0 0 1.9.3 1.7 1.7 0 0 0 1-1.6V3h4v.2a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1 2.8 2.8-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4h-.2a1.7 1.7 0 0 0-1.6 1z"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 2.5l8 3v6c0 5-3.4 8.6-8 10-4.6-1.4-8-5-8-10v-6z"/><path d="M9 12l2 2 4-4"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 6.2M20 5v6h-6"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></symbol>
+  <symbol id="i-keyboard" viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/></symbol>
+  <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></symbol>
+  <symbol id="i-power" viewBox="0 0 24 24"><path d="M12 3v9M6.3 6.3a9 9 0 1 0 11.4 0"/></symbol>
+  <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7"/></symbol>
+  <symbol id="i-warn" viewBox="0 0 24 24"><path d="M12 3.5L22 20H2z"/><path d="M12 9v5M12 17h.01"/></symbol>
+  <symbol id="i-chart" viewBox="0 0 24 24"><path d="M4 19V13M9 19V9M14 19V5M19 19v-8"/></symbol>
+  <symbol id="i-doc" viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12M7 11l5 5 5-5M4 20h16"/></symbol>
+  <symbol id="i-chevron" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></symbol>
+  <symbol id="i-external" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></symbol>
+</svg>
+
+<div class="app">
+  <!-- ============ 顶部标题栏（深色，可拖动） ============ -->
+  <header class="topbar">
+    <div class="tb-left">
+      <div class="tb-logo"><img src="assets/app-icon.svg" alt="Claude VM" /></div>
+      <span class="tb-name">Claude VM</span>
+      <span class="run-badge" id="runBadge"><i class="dot"></i><span id="runBadgeText">未启动</span></span>
+    </div>
+
+    <nav class="tb-nav">
+      <button type="button" id="navWorkspace" class="tb-btn" title="回到串流桌面">
+        <svg class="ico"><use href="#i-folder" /></svg><span>工作区</span>
+      </button>
+      <button type="button" id="check" class="tb-btn" title="环境检查与诊断概览">
+        <svg class="ico"><use href="#i-monitor" /></svg><span>环境检查</span>
+      </button>
+      <button type="button" id="navSettings" class="tb-btn" title="打开环境设置">
+        <svg class="ico"><use href="#i-settings" /></svg><span>设置</span>
+      </button>
+    </nav>
+
+    <div class="tb-right">
+      <button type="button" id="powerBtn" class="tb-power" title="启动 / 停止虚拟环境">
+        <svg class="ico"><use href="#i-power" /></svg><span id="powerLabel">启动</span>
+      </button>
+      <div class="win-ctrls">
+        <button type="button" id="winMin" class="wc" title="最小化"><span class="wc-min"></span></button>
+        <button type="button" id="winMax" class="wc" title="最大化 / 还原"><span class="wc-max"></span></button>
+        <button type="button" id="winClose" class="wc wc-close" title="关闭"><svg class="ico"><use href="#i-close" /></svg></button>
+      </div>
+    </div>
+  </header>
+
+  <!-- ============ 舞台：串流桌面 + 浮层 ============ -->
+  <main class="stage" id="stage">
+    <div class="wave-bg" aria-hidden="true"></div>
+    <div class="placeholder" id="placeholder">
+      <div class="ph-mark"><svg viewBox="0 0 24 24"><use href="#i-spark" /></svg></div>
+      <div class="ph-title" id="phTitle">虚拟环境尚未启动</div>
+      <div class="ph-sub" id="phSub">点击顶部「启动」，完整的 Linux 桌面会在这里串流显示。启动前请先在「设置 → 网络与安全」里导入节点配置。</div>
+      <button type="button" id="phStart" class="btn primary ph-btn">启动虚拟环境</button>
+    </div>
+    <webview id="view" class="view" hidden allowpopups></webview>
+
+    <!-- 环境设置（模态弹窗） -->
+    <div class="overlay" id="settingsOverlay" hidden>
+      <section class="modal settings-modal" role="dialog" aria-label="环境设置">
+        <div class="modal-head">
+          <div class="modal-title"><span class="mi mi-dark"><svg class="ico"><use href="#i-settings" /></svg></span>环境设置</div>
+          <button type="button" class="icon-x" data-close="settingsOverlay" title="关闭"><svg class="ico"><use href="#i-close" /></svg></button>
         </div>
-      </div>
+        <div class="modal-body">
+          <aside class="modal-nav" id="settingsNav">
+            <button type="button" data-tab="persona" class="active"><svg class="ico"><use href="#i-monitor" /></svg>环境画像</button>
+            <button type="button" data-tab="network"><svg class="ico"><use href="#i-shield" /></svg>网络与安全</button>
+            <button type="button" data-tab="workspace"><svg class="ico"><use href="#i-folder" /></svg>工作区与输入</button>
+            <button type="button" data-tab="advanced"><svg class="ico"><use href="#i-refresh" /></svg>高级与重置</button>
+          </aside>
 
-      <div class="field">
-        <label>地区（时区 / 语言）</label>
-        <select id="region">
-          <option value="tw-taipei">中国台湾地区·台北 · Asia/Taipei（UTC+8，推荐）</option>
-          <option value="us-east">美国东部 · America/New_York</option>
-          <option value="us-west">美国西部 · America/Los_Angeles</option>
-          <option value="uk">英国 · Europe/London</option>
-          <option value="jp">日本 · Asia/Tokyo</option>
-          <option value="de">德国 · Europe/Berlin</option>
-          <option value="sg">新加坡 · Asia/Singapore</option>
-        </select>
-      </div>
+          <div class="modal-content">
+            <!-- 环境画像 -->
+            <section class="tab-panel active" data-panel="persona">
+              <h2>环境画像</h2>
+              <p class="tab-sub">选择这套虚拟环境要伪装成的本地用户，时区、系统语言与浏览器语言会一起切换。</p>
+              <div id="personaCards" class="persona-cards"></div>
+              <div class="hint" id="personaHint"></div>
+              <div class="info-card blue">
+                <svg class="ico"><use href="#i-info" /></svg>
+                <div><b>画像在下次启动时生效</b><span>时区与语言在会话启动那一刻写入，切换画像会强制重建会话，不会让旧桌面带着旧语言继续跑。</span></div>
+              </div>
+            </section>
 
-      <div class="field">
-        <label>本机代理</label>
-        <div class="row">
-          <input id="proxy" type="text" placeholder="http://127.0.0.1:7897" spellcheck="false" />
-          <button id="proxyDetect" class="btn ghost">自动检测</button>
-        </div>
-        <details class="hint-details">
-          <summary>说明</summary>
-          <div class="hint" id="proxyHint">
-            Clash / v2ray / 任何 HTTP 代理都行。填 127.0.0.1 会自动换成虚拟机可见的宿主地址。
-            留空则直连 —— 直连通常登录不了 Claude Code，也就失去了用它的意义。
-          </div>
-        </details>
-      </div>
+            <!-- 网络与安全 -->
+            <section class="tab-panel" data-panel="network">
+              <h2>网络与安全</h2>
+              <p class="tab-sub">配置网络出口、代理与隔离策略，保障虚拟环境的稳定与安全。</p>
 
-      <div class="field">
-        <label>分流方式</label>
-        <select id="proxyMode">
-          <option value="all">全部流量经代理（推荐）</option>
-          <option value="whitelist">仅 Anthropic 相关域名经代理</option>
-        </select>
-        <details class="hint-details">
-          <summary>说明</summary>
-          <div class="hint">
-            选「全部」时，虚拟机的出口 IP、DNS 解析、Cloudflare 边缘节点三者由你的代理统一决定，
-            彼此自洽；这也是「一台真实电脑」该有的样子。若你的代理规则里已把国内域名设为直连，
-            它仍会按你的规则直连，不用在这里操心。
-          </div>
-        </details>
-      </div>
+              <div class="form-row">
+                <label for="clashYamlPath">配置文件 <span class="q" title="每次启动都读取该文件的最新内容">?</span></label>
+                <div class="form-ctrl">
+                  <div class="input-with-icon"><svg class="ico"><use href="#i-file" /></svg><input id="clashYamlPath" type="text" placeholder="选择订阅或配置 .yaml 文件" spellcheck="false" /></div>
+                  <button type="button" id="pickClash" class="btn ghost"><svg class="ico"><use href="#i-folder" /></svg>更换</button>
+                </div>
+                <div class="hint" id="yamlHint"></div>
+              </div>
 
-      <div class="field">
-        <label>容器内代理内核（TUN 全局接管）</label>
-        <select id="tunMode">
-          <option value="off">关闭 · 用上面的本机代理端口（旧链路）</option>
-          <option value="on">开启 · 导入 Clash YAML，由虚拟机内核自己出网</option>
-        </select>
-        <div class="row" id="tunBox" hidden>
-          <input id="clashYamlPath" type="text" placeholder="选择 Clash / Mihomo 的 .yaml 配置" spellcheck="false" />
-          <button id="pickClash" class="btn ghost" title="可以直接选 Clash Verge 配置目录里的 YAML">选择 YAML…</button>
-        </div>
-        <div class="hint" id="tunHint"></div>
-        <details class="hint-details">
-          <summary>说明</summary>
-          <div class="hint">
-            开启后，mihomo 内核随镜像运行在虚拟机内部，用 TUN 虚拟网卡接管全部流量（含 DNS / UDP / IPv6）。
-            <b>宿主的 Clash 只是用来编辑和导入配置的辅助工具</b>——它是全局还是直连、甚至关掉，都不影响虚拟机出口。
-            每次启动会重新读取你选的 YAML，改完外部配置点一次「停止 → 启动」即可。
-            内核退出时 TUN 与策略路由一起消失，而默认路由已被熔断，网络立刻全断（fail-closed）。
-            节点凭据只写在虚拟机内 <code>/opt/config/mihomo.yaml</code>（600 root:root），不落在共享工作区。
-          </div>
-        </details>
-      </div>
+              <div class="form-row">
+                <label for="selectedNode">出口节点 <span class="q" title="所有流量走这一个节点，订阅原有分流规则会被忽略">?</span></label>
+                <div class="form-ctrl">
+                  <select id="selectedNode"></select>
+                  <button type="button" id="refreshNodes" class="btn ghost">刷新</button>
+                </div>
+                <div class="notice orange"><svg class="ico"><use href="#i-info" /></svg>运行期间不可切换，修改后下次启动生效</div>
+                <div class="hint" id="nodeHint"></div>
+              </div>
 
-      <div class="field">
-        <label>网络熔断（代理断开即断网）</label>
-        <select id="netGuard">
-          <option value="strict">严格 · 只允许经代理出网（推荐）</option>
-          <option value="off">关闭 · 代理断开时允许直连（不推荐）</option>
-        </select>
-        <details class="hint-details">
-          <summary>说明</summary>
-          <div class="hint">
-            严格模式下会移除虚拟机的默认路由并关闭 IPv6：代理一断，网络内核层面直接不通，
-            绝不会回落到本机直连暴露真实环境。启动前还会校验代理是否真的生效、出口地区、
-            多源出口一致性；校验不过就保持断网并写明原因。
-          </div>
-        </details>
-      </div>
+              <div class="form-row">
+                <label>测试延迟 <span class="q" title="经容器内内核实测到 gstatic 的往返延迟">?</span></label>
+                <div class="form-ctrl">
+                  <span class="latency-value" id="latencyValue"><svg class="ico"><use href="#i-chart" /></svg><b id="latencyText">未测</b></span>
+                  <button type="button" id="testLatency" class="btn ghost"><svg class="ico"><use href="#i-refresh" /></svg>重新测试</button>
+                </div>
+              </div>
 
-      <div class="field">
-        <label>显示模式</label>
-        <select id="displayMode">
-          <option value="wslg">WSLg 原生窗口（推荐 · 终端用 Claude Code）</option>
-          <option value="desktop">串流桌面（noVNC · 完整桌面 / 浏览器）</option>
-        </select>
-        <details class="hint-details">
-          <summary>说明</summary>
-          <div class="hint" id="displayHint">
-            原生窗口模式下终端是 Windows 独立窗口，剪贴板与音频直接走系统，跟本机终端几乎一样；
-            中文用宿主输入法打好后复制，在终端里 Ctrl+Shift+V 粘贴。需要浏览器或完整桌面时切到串流桌面。
-          </div>
-        </details>
-      </div>
+              <div class="form-row">
+                <label for="netGuard">网络熔断 <span class="q" title="严格模式移除默认路由并关闭 IPv6，内核退出即断网">?</span></label>
+                <select id="netGuard">
+                  <option value="strict">严格 · 仅允许容器内内核出网（推荐）</option>
+                  <option value="off">关闭 · 允许直连（不推荐）</option>
+                </select>
+              </div>
 
-      <div class="field" id="wlBox" hidden>
-        <label>代理域名白名单</label>
-        <input id="whitelist" type="text" spellcheck="false" />
-        <div class="hint">逗号分隔，默认覆盖 api.anthropic.com / claude.ai / *.claudeusercontent.com</div>
-      </div>
+              <div class="notice green" id="lockNotice"><svg class="ico"><use href="#i-check" /></svg><span>已启用：容器网络经 Mihomo + TUN 出网，阻断直连与旁路。</span></div>
 
-      <div class="field">
-        <label>中文输入法（WSLg 终端）</label>
-        <select id="inputMethod">
-          <option value="off">关闭 · 用宿主输入法打好后粘贴</option>
-          <option value="rime">Rime 万象拼音（IBus · 简体词库）</option>
-        </select>
-        <details class="hint-details">
-          <summary>说明</summary>
-          <div class="hint">
-            WSLg 不转发 Windows IME 的组合串，所以把输入法放在虚拟机内部跑，
-            经 XIM 把中文提交给 xterm → Claude Code。词库随安装包离线提供（26MB），
-            首次启用只需联网装约 20MB 的 IBus 组件，不装任何中文字体包，不影响检测评分。
-            切换后要「停止 → 启动」才生效。
-          </div>
-        </details>
-      </div>
+              <div class="chain">
+                <span class="chain-node"><svg class="ico"><use href="#i-monitor" /></svg>宿主机</span>
+                <svg class="ico chain-arrow"><use href="#i-chevron" /></svg>
+                <span class="chain-node dashed">隔离虚拟环境</span>
+                <svg class="ico chain-arrow"><use href="#i-chevron" /></svg>
+                <span class="chain-node dashed strong">容器内 Mihomo + TUN</span>
+                <svg class="ico chain-arrow"><use href="#i-chevron" /></svg>
+                <span class="chain-node"><svg class="ico"><use href="#i-globe" /></svg>Internet</span>
+              </div>
+              <div class="foot-note"><svg class="ico"><use href="#i-shield" /></svg>网络路径：宿主机 → 隔离虚拟环境 → 容器内 Mihomo + TUN → Internet　｜　节点变更为启动后生效</div>
+            </section>
 
-      <div class="field">
-        <label>工作区（与主机共享目录）</label>
-        <div class="row">
-          <input id="workspace" type="text" spellcheck="false" />
-          <button id="pick" class="btn ghost" title="选择目录">…</button>
-        </div>
-        <a id="openWs" class="link">在资源管理器中打开</a>
-      </div>
+            <!-- 工作区与输入 -->
+            <section class="tab-panel" data-panel="workspace">
+              <h2>工作区与输入</h2>
+              <p class="tab-sub">配置主机与虚拟机的文件共享、输入法与桌面行为。</p>
 
-      <div class="actions">
-        <button id="start" class="btn primary">启动虚拟环境</button>
-        <button id="stop" class="btn danger" disabled>停止</button>
-      </div>
+              <div class="form-row">
+                <label for="workspace"><svg class="ico"><use href="#i-folder" /></svg>共享工作区</label>
+                <p class="field-desc">主机与虚拟机之间共享的工作目录，适合存放项目、数据与中间文件。</p>
+                <div class="form-ctrl">
+                  <div class="input-with-icon"><svg class="ico"><use href="#i-folder" /></svg><input id="workspace" type="text" spellcheck="false" /></div>
+                  <button type="button" id="pick" class="btn ghost">…</button>
+                  <button type="button" id="openWs" class="btn ghost"><svg class="ico"><use href="#i-external" /></svg>在资源管理器中打开</button>
+                </div>
+              </div>
 
-      <div class="status" id="status">未启动</div>
-      <div class="guard-badge" id="guardBadge" hidden title="点击查看自检中的网络熔断分项"></div>
-      <div class="egress" id="egress" hidden></div>
+              <div class="form-row">
+                <label for="inputMethod"><svg class="ico"><use href="#i-keyboard" /></svg>中文输入法</label>
+                <p class="field-desc">在虚拟机中使用的中文输入方案。</p>
+                <div class="form-ctrl">
+                  <select id="inputMethod">
+                    <option value="off">关闭 · 用宿主输入法打好后粘贴</option>
+                    <option value="rime">fcitx5 + Rime 万象拼音（简体词库）</option>
+                  </select>
+                </div>
+                <div class="shortcuts"><kbd>Ctrl+Space</kbd> 切换输入法 <kbd>Shift</kbd> 中英切换</div>
+              </div>
 
-      <div class="check-block">
-        <button id="check" class="btn ghost">运行环境自检（check-cc 维度）</button>
-        <div id="checkChip" class="check-chip" hidden></div>
-      </div>
+              <div class="info-card blue tall">
+                <svg class="ico"><use href="#i-info" /></svg>
+                <div><b>输入法运行于虚拟机内</b><span>已在虚拟机中预置 fcitx5 与 Rime、词库、配置与自定义方案均保存在虚拟机内，不影响主机系统。</span></div>
+                <div class="ime-glyph">中<sub>A</sub></div>
+              </div>
 
-      <div class="check-block row">
-        <button id="diag" class="btn ghost" title="把配置、自检结果和最近的运行日志打包成一个文件，出问题时发给开发者">导出诊断包</button>
-        <button id="diagOpen" class="link" title="打开日志目录">日志</button>
-      </div>
+              <div class="two-cards">
+                <div class="mini-card"><div class="mini-title"><svg class="ico"><use href="#i-folder" /></svg>文件共享说明</div><p>共享工作区在主机与虚拟机之间双向可见，可直接读写、编辑与同步文件。</p></div>
+                <div class="mini-card"><div class="mini-title"><svg class="ico"><use href="#i-monitor" /></svg>桌面行为</div><p>虚拟机桌面会跟随 Claude VM 窗口大小自动适配分辨率，提供一致的桌面使用体验。</p></div>
+              </div>
+            </section>
 
-      <div class="check-block row">
-        <button id="reset" class="btn ghost btn-reset" title="销毁当前虚拟环境并生成一个全新环境（封号后换身份用）">一键重置环境</button>
-      </div>
+            <!-- 高级与重置 -->
+            <section class="tab-panel" data-panel="advanced">
+              <h2>高级与重置</h2>
+              <p class="tab-sub">环境生命周期、诊断工具与身份重建。重置会销毁当前虚拟环境并生成全新身份。</p>
 
-      <div class="foot">本地 WSL 运行时 · 无 Docker 依赖</div>
-    </aside>
+              <div class="form-row">
+                <label>环境生命周期</label>
+                <div class="form-ctrl">
+                  <button type="button" id="advStart" class="btn primary">启动虚拟环境</button>
+                  <button type="button" id="advStop" class="btn ghost">停止</button>
+                </div>
+                <div class="hint" id="advStatus">未启动</div>
+              </div>
 
-    <!-- 右侧：串流桌面 -->
-    <main class="stage">
-      <div id="placeholder" class="placeholder">
-        <div class="ph-icon">▣</div>
-        <div class="ph-title" id="phTitle">虚拟环境尚未启动</div>
-        <div class="ph-sub" id="phSub">点击左侧「启动虚拟环境」，Claude Code 终端窗口会以原生窗口弹出。</div>
-      </div>
+              <div class="form-row">
+                <label>诊断工具</label>
+                <div class="form-ctrl">
+                  <button type="button" id="diag" class="btn ghost"><svg class="ico"><use href="#i-download" /></svg>导出诊断包</button>
+                  <button type="button" id="diagOpen" class="btn ghost"><svg class="ico"><use href="#i-external" /></svg>打开日志</button>
+                </div>
+                <div class="hint">诊断包内含配置、检查结果与最近的运行日志，排查问题时可直接提供。</div>
+              </div>
 
-      <!-- WSLg 模式：没有可嵌入的画面，窗口都在 Windows 桌面上，这里只做状态与入口 -->
-      <div id="wslgPanel" class="wslg-panel" hidden>
-        <div class="wslg-badge">WSLg 原生窗口</div>
-        <h2>Claude Code 在独立窗口里运行</h2>
-        <p>启动后终端窗口会自己出现在 Windows 桌面上。它不是网页串流：剪贴板、音频、缩放都由系统原生处理，和使用本机终端几乎一样。</p>
-        <div id="wslgAuth" class="wslg-auth">正在检查登录态…</div>
-        <div class="wslg-actions">
-          <button id="wslgTerminal" class="btn primary">打开 Claude Code 终端</button>
-          <button id="wslgShell" class="btn ghost">打开普通终端</button>
-          <button id="wslgLogin" class="btn ghost" hidden>打开浏览器完成授权</button>
-        </div>
-        <div class="wslg-tips">
-          <div><b>中文输入</b>：Windows 侧用输入法打好后复制，在终端里按 <code>Ctrl+Shift+V</code> 粘贴。不需要在虚拟机里装输入法或中文字体。</div>
-          <div><b>登录授权</b>：只在第一次做一次，凭据留在虚拟环境里；之后开终端即可直接使用。</div>
-          <div><b>需要浏览器或完整桌面</b>：把左侧「显示模式」切到「串流桌面」，点停止再启动。</div>
-        </div>
-      </div>
-      <webview id="view" class="view" hidden allowpopups></webview>
+              <div class="form-row">
+                <label>地区校验</label>
+                <label class="switch-line"><input type="checkbox" id="strictRegion" checked /><span>严格校验出口地区与画像一致（不一致时熔断保持断网）</span></label>
+              </div>
 
-      <!-- 环境自检结果面板 -->
-      <div id="checkPanel" class="cp-mask" hidden>
-        <div class="cp-card">
-          <div class="cp-head">
-            <div>
-              <div class="cp-title">环境一致性自检</div>
-              <div class="cp-sub" id="cpSub">对照 check-cc 的封号风险维度逐项核对</div>
-            </div>
-            <button id="cpClose" class="cp-x" title="关闭">✕</button>
-          </div>
-
-          <div id="cpVerdict" class="cp-verdict"></div>
-
-          <div id="cpBody" class="cp-body"></div>
-
-          <pre id="cpRaw" class="cp-raw" hidden></pre>
-
-          <div class="cp-foot">
-            <button id="cpRerun" class="btn ghost">重新检测</button>
-            <button id="cpFilter" class="btn ghost" hidden>显示全部</button>
-            <button id="cpRawToggle" class="btn ghost">原始输出</button>
+              <div class="danger-zone">
+                <div><b>一键重置环境</b><p>销毁当前虚拟环境并重新生成：主机名、machine-id、Chrome 登录态全部清空，用于封号后换身份。</p></div>
+                <button type="button" id="reset" class="btn btn-reset"><svg class="ico"><use href="#i-refresh" /></svg>重置环境</button>
+              </div>
+            </section>
           </div>
         </div>
-      </div>
-    </main>
-  </div>
-  <script src="renderer.js"></script>
+        <div class="modal-foot">
+          <span class="foot-hint" id="settingsHint"></span>
+          <button type="button" class="btn ghost" data-close="settingsOverlay">取消</button>
+          <button type="button" id="settingsSave" class="btn primary">保存设置</button>
+        </div>
+      </section>
+    </div>
+
+    <!-- 环境检查与诊断（概览浮层，详细报告仍走独立窗口） -->
+    <div class="overlay" id="checkOverlay" hidden>
+      <section class="modal check-modal" role="dialog" aria-label="环境检查与诊断">
+        <div class="modal-head">
+          <div class="modal-title"><span class="mi mi-dark"><svg class="ico"><use href="#i-monitor" /></svg></span>环境检查与诊断</div>
+          <div class="head-right">
+            <div class="seg-switch"><button type="button" class="active" data-view="host">主机诊断 (Host)</button><button type="button" data-view="guest">虚拟机状态 (Guest)</button></div>
+            <button type="button" class="icon-x" data-close="checkOverlay" title="关闭"><svg class="ico"><use href="#i-close" /></svg></button>
+          </div>
+        </div>
+        <div class="check-sub" id="checkSub">启动时自动检查 · —</div>
+        <div class="check-body">
+          <div class="stat-row" id="checkStats"></div>
+          <div class="check-grid" id="checkGrid"></div>
+          <div class="cp-empty" id="checkEmpty">正在逐项核对画像、容器内内核、TUN 接管与出口一致性…</div>
+        </div>
+        <div class="modal-foot check-foot">
+          <button type="button" id="checkFull" class="btn ghost"><svg class="ico"><use href="#i-doc" /></svg>查看完整报告</button>
+          <button type="button" id="checkLogs" class="btn ghost"><svg class="ico"><use href="#i-term" /></svg>打开日志</button>
+          <button type="button" id="checkDiag" class="btn ghost"><svg class="ico"><use href="#i-download" /></svg>导出诊断包</button>
+          <span class="sb-flex"></span>
+          <button type="button" id="checkReset" class="btn btn-reset"><svg class="ico"><use href="#i-refresh" /></svg>重置环境</button>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <!-- ============ 底部：宿主状态信息栏（单行） ============
+       注意：这里不是任务栏。桌面任务栏属于虚拟机，由 VM 内的 tint2 面板
+       （/opt/config/tint2rc，entrypoint.sh 启动）随 VNC 画面串流出来：
+       启动器指向 /usr/share/applications/claude-*.desktop，任务项是真实 X11
+       窗口，时钟走 VM 自己的 TZ（画像时区）。宿主只展示宿主侧的状态数据，
+       不要再画一套假的 dock / 窗口标签 / 时钟，否则会出现两个时钟、两个任务栏。 -->
+  <footer class="statusbar">
+    <div class="sb-row">
+      <span class="sb-persona" id="sbPersona">🇺🇸 美国 · 洛杉矶 (LAX)</span>
+      <span class="sb-sep"></span>
+      <span class="sb-metric" id="sbLatency"><svg class="ico"><use href="#i-chart" /></svg>— ms</span>
+      <span class="sb-sep"></span>
+      <span class="sb-metric" id="sbGuard"><svg class="ico"><use href="#i-lock" /></svg>网络未锁定</span>
+      <div class="sb-flex"></div>
+      <span class="sb-items" id="sbItems">—</span>
+    </div>
+  </footer>
+</div>
+<script src="renderer.js"></script>
 </body>
 </html>
