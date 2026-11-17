@@ -14,6 +14,7 @@ contextBridge.exposeInMainWorld('api', {
   check: () => ipcRenderer.invoke('runtime:check'),
   netStatus: () => ipcRenderer.invoke('net:status'),
   probeWsl: () => ipcRenderer.invoke('wsl:probe'),
+  installWsl: () => ipcRenderer.invoke('wsl:install'),
   // 导入外部 Clash/Mihomo YAML，交给容器内内核；clash:nodes 用于刷新节点列表
   pickClashYaml: () => ipcRenderer.invoke('clash:pick'),
   listNodes: () => ipcRenderer.invoke('clash:nodes'),

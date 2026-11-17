@@ -158,6 +158,8 @@ body {
 .ph-sub { font-size: 12.5px; color: #7c8390; max-width: 440px; line-height: 1.7; }
 .ph-btn { margin-top: 8px; padding: 11px 24px; flex: 0 0 auto; background: #f0825a !important; border-color: #f0825a !important; color: #14141f !important; }
 .ph-btn:hover { filter: brightness(.95); }
+.wsl-actions { display: flex; justify-content: center; gap: 8px; margin-top: 8px; }
+.wsl-actions[hidden] { display: none; }
 
 /* ============ 浮层 / 弹窗骨架 ============ */
 .overlay {

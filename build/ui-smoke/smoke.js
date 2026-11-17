@@ -64,6 +64,16 @@ app.whenReady().then(async () => {
     if (base.statusbarHeight !== '30px') errors.push(`状态栏高度应为 30px，实际 ${base.statusbarHeight}`);
     if (!base.iconLoaded) errors.push('顶栏 App Icon (assets/app-icon.svg) 未能加载');
   }
+  const needsWsl = await probe(`!document.getElementById('wslActions').hidden && document.getElementById('phStart').disabled`);
+  if (!needsWsl) errors.push('WSL 不可用时应展示安装入口并阻止启动');
+  await probe(`document.getElementById('wslInstall').click(); true`);
+  await new Promise((r) => setTimeout(r, 100));
+  const installNotice = await probe(`document.getElementById('phSub').textContent`);
+  if (!installNotice.includes('重启')) errors.push('WSL 安装完成后应提示可能需要重启');
+  await probe(`document.getElementById('wslRecheck').click(); true`);
+  await new Promise((r) => setTimeout(r, 100));
+  const readyWsl = await probe(`document.getElementById('wslActions').hidden && !document.getElementById('phStart').disabled`);
+  if (!readyWsl) errors.push('WSL 重新检查通过后应恢复启动入口');
 
   // 打开设置 → 切到「工作区与输入」→ 点保存关闭
   await probe(`document.getElementById('navSettings').click(); true`);

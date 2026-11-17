@@ -19,6 +19,7 @@ const NODES = [
 
 const ok = (extra) => Promise.resolve({ ok: true, ...(extra || {}) });
 const noop = () => {};
+let wslReady = false;
 
 contextBridge.exposeInMainWorld('api', {
   getConfig: () => ok({
@@ -43,7 +44,8 @@ contextBridge.exposeInMainWorld('api', {
     { id: 'desktop', title: '浏览器与运行环境', items: [{ status: 'pass', label: '浏览器', value: '正常' }] },
   ] } }),
   netStatus: () => ok({ state: 'guarded', exit_ip: '38.150.32.117' }),
-  probeWsl: () => ok(),
+  probeWsl: () => ok({ ok: wslReady }),
+  installWsl: () => { wslReady = true; return ok(); },
   pickClashYaml: () => ok({ canceled: true }),
   listNodes: () => ok({ nodes: NODES }),
   nodeLatency: () => ok({ delays: { 'LAX-Cogent-Reality': 197 } }),

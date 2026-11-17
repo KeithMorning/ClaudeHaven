@@ -31,7 +31,7 @@ Claude VM 是一个 Windows 桌面应用。它使用 WSL2 运行 Linux 桌面，
 4. 选择地区和共享工作区，点击「启动」。首次启动需要导入运行时；桌面出现后，可在其中打开浏览器或终端。
 5. 在「网络与安全」中运行连接检查，查看网络守卫、DNS 和出口状态。
 
-如果电脑还没有 WSL，可在管理员 PowerShell 中运行 `wsl --install`，按提示重启并完成安装。此命令要求 Windows 10 2004（内部版本 19041）及以上或 Windows 11；更旧版本请参阅 [Microsoft 手动安装说明](https://learn.microsoft.com/windows/wsl/install-manual)。Claude VM 使用自己的 WSL 发行版，首次启动时自动导入；没有可用的 WSL2 时，应用无法启动虚拟桌面。
+如果电脑还没有 WSL，可在应用中点击「安装 WSL2」，同意管理员授权，并按提示重启后重新检查。也可以在管理员 PowerShell 中运行 `wsl --install`。此命令要求 Windows 10 2004（内部版本 19041）及以上或 Windows 11；更旧版本请参阅 [Microsoft 手动安装说明](https://learn.microsoft.com/windows/wsl/install-manual)。Claude VM 使用自己的 WSL 发行版，首次启动时自动导入；没有可用的 WSL2 时，应用无法启动虚拟桌面。
 
 ## 功能
 

@@ -688,13 +688,47 @@ if (!window.api) {
   }
   window.api.onProgress((msg) => setStatus(msg, 'busy'));
 
-  // 预检：WSL2 不可用时直接告诉用户怎么修，而不是等导入报错
-  const probe = await window.api.probeWsl();
-  if (!probe.ok) {
-    setStatus('当前系统未启用 WSL2，无法启动环境', 'err');
-    setHint(probe.error || '需要先安装 WSL2', 'err');
-    $('advStart').disabled = true;
-    return;
+  // WSL 安装由用户触发；完成后重新检查，不自动重启 Windows。
+  async function checkWsl() {
+    $('wslRecheck').disabled = true;
+    let probe;
+    try { probe = await window.api.probeWsl(); }
+    catch (error) { probe = { ok: false, error: error.message || 'WSL 检查失败' }; }
+    $('wslRecheck').disabled = false;
+    $('wslActions').hidden = probe.ok;
+    $('phStart').disabled = !probe.ok;
+    $('powerBtn').disabled = !probe.ok;
+    $('advStart').disabled = !probe.ok;
+    if (!probe.ok) {
+      $('phTitle').textContent = '需要先启用 WSL2';
+      $('phSub').textContent = 'Windows 家庭版也支持。安装需要管理员授权，完成后可能需要重启电脑。';
+      setStatus('WSL2 未就绪', 'err');
+      setHint(probe.error || '需要先安装 WSL2', 'err');
+    } else {
+      $('phTitle').textContent = '准备好开始工作了吗？';
+      $('phSub').textContent = '启动虚拟环境，进入你的 Claude 工作区。';
+      setStatus('已停止', '');
+      setHint('', '');
+    }
   }
+  $('wslRecheck').addEventListener('click', checkWsl);
+  $('wslInstall').addEventListener('click', async () => {
+    const btn = $('wslInstall');
+    btn.disabled = true;
+    $('wslRecheck').disabled = true;
+    $('phSub').textContent = '正在安装 WSL2，请在 Windows 提示时允许管理员授权。';
+    try {
+      const result = await window.api.installWsl();
+      $('phSub').textContent = result.ok
+        ? '安装命令已完成。请按 Windows 提示重启电脑，再打开本应用并重新检查。'
+        : (result.error || '安装未完成，请重新尝试。');
+    } catch (error) {
+      $('phSub').textContent = '安装未完成：' + (error.message || '未知错误');
+    } finally {
+      btn.disabled = false;
+      $('wslRecheck').disabled = false;
+    }
+  });
+  await checkWsl();
 
 })();

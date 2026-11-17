@@ -787,6 +787,14 @@ ipcMain.handle('runtime:check', async () => {
 // 网络守卫状态（fail-closed 熔断 / 内核存活 / 预检结论），主界面轮询用
 ipcMain.handle('net:status', async () => readNetGuard());
 ipcMain.handle('wsl:probe', async () => probeWsl());
+ipcMain.handle('wsl:install', async () => {
+  if (process.platform !== 'win32') return { ok: false, error: '此功能仅支持 Windows。' };
+  // 只运行固定命令，不接受渲染层参数。用户点击按钮后由 Windows 显示 UAC 授权。
+  const script = "$ErrorActionPreference='Stop'; try { $p=Start-Process -FilePath (Join-Path $env:SystemRoot 'System32\\wsl.exe') -ArgumentList '--install','--no-distribution' -Verb RunAs -WindowStyle Hidden -Wait -PassThru; if ($p.ExitCode -in 0,3010,1641) { exit 0 }; exit 1 } catch { exit 1 }";
+  return new Promise((resolve) => execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], { windowsHide: true, timeout: 900000 }, (err) => {
+    resolve(err ? { ok: false, error: '安装未完成：请确认已允许管理员授权、系统支持 WSL2，并检查网络连接。' } : { ok: true });
+  }));
+});
 
 // ---------- 独立检查报告窗口 ----------
 let reportWin = null;
