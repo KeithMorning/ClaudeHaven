@@ -1,26 +1,36 @@
-# ClaudeVM
+<div align="center">
 
-在 Windows 上一键拉起一个**隔离的 Linux 桌面环境**，里面预装 Chrome 与 Claude Code。
-**2.0 起出网流量由容器内的 mihomo 内核经 TUN 全量接管**（fail-closed：内核退出即断网），
-宿主代理软件只是编辑/导入 YAML 的辅助工具，不参与运行时链路。
+<h1>ClaudeVM</h1>
+
+**把 Claude 的工位搬进虚拟机，出网说断就断**
+
+<img src="claude-desktop/app/renderer/assets/app-icon.svg" alt="ClaudeVM" width="128" />
+
+[![Version](https://img.shields.io/badge/version-2.0.3-orange)](https://github.com/KeithMorning/ClaudeVM/releases) [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS-lightgrey)](#构建桌面端) [![Tests](https://img.shields.io/badge/tests-143%20passing-brightgreen)](tests/README.md) [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+
+**[构建与安装](#构建桌面端) · [运行时镜像](#运行时镜像) · [技术文档](doc/index.md) · [测试体系](tests/README.md)**
+
+</div>
+
+## 受够了在本机折腾环境
+
+作为一个只想安安静静写代码的正常用户，受够了在本机装代理、改系统设置、调时区语言、对着检测站的分数反复猜谜，还要担心哪一步留下直连。我们提出 **ClaudeVM**：**一个开箱即用的桌面程序，把串流桌面、Chrome、Claude Code 和出网内核一起放进隔离的 Linux 环境里。**
+
+ClaudeVM 让你在熟悉的 Windows 上工作：点一次「启动」，串流桌面里已经有浏览器和终端；出网由容器内的 mihomo 内核经 TUN 全量接管，内核退出即断网；时区、系统语言与浏览器语言一次切好，不依赖宿主代理软件配合。支持以下几个重点功能：
 
 - **串流桌面（唯一显示模式）**：TigerVNC + websockify + noVNC，只监听 `127.0.0.1`。
 - **导入 YAML + 选择节点**：从 `proxies` 里选一个节点作为全量出口。
 - **伪装画像**：中国台湾·台北 / 美国·洛杉矶两套，一次切换时区、语言与浏览器语言头。
+- **原生桌面任务栏**：虚拟机里跑 tint2 面板，启动器、窗口任务项与时钟都是真实 X11 桌面的一部分；宿主不画假任务栏。
 - **独立检查报告**：单独窗口渲染检测结果，不遮挡桌面、不影响使用。
 
-## 界面预览
+**运行界面：**
 
-**启动前** — 深色框架 + 奶油色舞台，中央是启动入口；底部那行细的是**宿主侧状态信息**
-（地区 / 延迟 / 网络熔断 / 提示），不是任务栏。
+| 启动前 | 运行中 |
+| :---: | :---: |
+| <a href="doc/images/ui-idle.png"><img src="doc/images/ui-idle.png" alt="Claude VM 启动前" width="400" /></a> | <a href="doc/images/ui-running.png"><img src="doc/images/ui-running.png" alt="Claude VM 运行中" width="400" /></a> |
 
-![Claude VM 启动前](doc/images/ui-idle.png)
-
-**运行中** — 串流显示的是真实的 Linux X11 桌面。画面底部那条是 **VM 内的 tint2 任务栏**：
-左侧启动器与窗口任务项来自客机桌面，右侧时钟走 VM 自己的时区（洛杉矶 `05:08 / Tue 17 Nov`），
-与宿主本机时间无关；再下面那行细的才是宿主状态信息。
-
-![Claude VM 运行中：串流桌面与 VM 任务栏](doc/images/ui-running.png)
+图中底部那行细的是**宿主侧状态信息**（地区 / 延迟 / 网络熔断 / 提示）；串流画面底部那条才是 **VM 内的 tint2 任务栏** —— 启动器与窗口任务项来自客机桌面，右侧时钟走 VM 自己的时区（`05:08 / Tue 17 Nov`），与宿主本机时间无关。
 
 ## 仓库结构
 
