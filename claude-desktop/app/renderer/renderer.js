@@ -421,10 +421,26 @@ function hideDesktop() {
 
 // ---------- 启动 / 停止 ----------
 async function doStart() {
+  if ($('phStart').disabled || running) return;
+  $('phStart').disabled = true;
+  $('powerBtn').disabled = true;
   save();
   $('advStart').disabled = true;
   setStatus('正在启动…', 'busy');
-  const r = await window.api.start(gather());
+  $('phTitle').textContent = '正在启动虚拟环境';
+  $('phSub').textContent = '正在准备工作区，请稍候。';
+  $('phStart').textContent = '正在启动…';
+  let r;
+  try {
+    r = await window.api.start(gather());
+  } catch (error) {
+    r = { ok: false, error: error.message };
+  }
+  $('phStart').disabled = false;
+  $('powerBtn').disabled = false;
+  $('phTitle').textContent = '准备好开始工作了吗？';
+  $('phSub').textContent = '启动虚拟环境，进入你的 Claude 工作区。';
+  $('phStart').textContent = '启动虚拟环境';
   if (r.ok) {
     showDesktop(r, false);
   } else {
@@ -630,6 +646,4 @@ if (!window.api) {
     return;
   }
 
-  // 老用户（已配置过）自动启动，接近「双击即用」
-  if (!cfg._firstRun) setTimeout(doStart, 400);
 })();
