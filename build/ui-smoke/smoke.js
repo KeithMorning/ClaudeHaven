@@ -76,6 +76,12 @@ app.whenReady().then(async () => {
     activeTab: (document.querySelector('#settingsNav .active') || {}).textContent,
     activePanel: (document.querySelector('.tab-panel.active') || {}).dataset.panel,
   }))()`);
+  await probe(`document.querySelector('#settingsNav [data-tab="network"]').click(); document.getElementById('cpRerun').click(); true`);
+  await new Promise((r) => setTimeout(r, 200));
+  const network = await probe(`(() => ({text: document.getElementById('cpBody').textContent, verdict: document.getElementById('cpVerdict').textContent}))()`);
+  if (!network || !network.text.includes('DNS 归属') || network.text.includes('浏览器') || !network.verdict.includes('失败')) errors.push('网络检查没有显示网络风险或混入了其他分类');
+  await probe(`window.dispatchEvent(new Event('network-check-stale')); true`);
+  if (!(await probe(`document.getElementById('cpVerdict').textContent.includes('失效') && document.getElementById('cpExport').disabled`))) errors.push('连接变化后旧检查结果未失效');
   await probe(`document.querySelector('[data-close="settingsOverlay"]').click(); true`);
   const closed = await probe(`document.getElementById('settingsOverlay').hidden`);
 

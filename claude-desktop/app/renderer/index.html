@@ -85,7 +85,6 @@
             <button type="button" data-tab="persona" class="active"><svg class="ico"><use href="#i-monitor" /></svg>环境画像</button>
             <button type="button" data-tab="network"><svg class="ico"><use href="#i-shield" /></svg>网络与安全</button>
             <button type="button" data-tab="workspace"><svg class="ico"><use href="#i-folder" /></svg>工作区与输入</button>
-            <button type="button" data-tab="check"><svg class="ico"><use href="#i-monitor" /></svg>环境检查</button>
             <button type="button" data-tab="advanced"><svg class="ico"><use href="#i-refresh" /></svg>高级与重置</button>
           </aside>
 
@@ -101,10 +100,12 @@
             <!-- 网络与安全 -->
             <section class="tab-panel" data-panel="network">
               <h2>网络与安全</h2>
+              <p class="tab-sub">导入 Clash / Mihomo 配置，选择虚拟环境使用的出口节点。</p>
               <div class="network-card">
               <h3>网络连接</h3>
               <div class="network-field">
-                <label for="clashYamlPath">配置文件</label>
+                <label for="clashYamlPath">Clash / Mihomo 配置文件</label>
+                <p class="field-desc">选择与 Clash 等客户端使用的 YAML 配置。虚拟环境读取其中的节点，所有流量使用所选节点，不沿用原配置的分流规则。</p>
                 <div class="form-ctrl network-controls">
                   <input id="clashYamlPath" type="text" placeholder="选择 YAML 配置文件" spellcheck="false" />
                   <button type="button" id="pickClash" class="btn ghost">选择文件</button>
@@ -123,6 +124,22 @@
                 </div>
                 <div class="hint" id="nodeHint"></div>
               </div>
+              </div>
+
+              <div class="network-card network-check">
+                <h3>连接与泄露风险检查</h3>
+                <p class="field-desc">检查网络守卫、直连封锁、DNS 和出口一致性。检查会连接外部检测服务，结果仅反映当时状态；无法保证 CheckCC 评分或排除所有浏览器泄露。原始输出和导出报告包含完整环境信息，请谨慎分享。</p>
+                <p class="field-desc" id="cpSub">启动虚拟环境后检查当前连接。</p>
+                <div class="check-actions">
+                  <button id="cpRerun" type="button" class="btn primary">检查网络</button>
+                  <button id="cpFilter" type="button" class="btn ghost" hidden>显示全部</button>
+                  <button id="cpRawToggle" type="button" class="btn ghost" disabled>完整原始输出</button>
+                  <button id="cpExport" type="button" class="btn ghost" disabled>导出报告</button>
+                </div>
+                <div class="rp-note" id="rpNote" role="status"></div>
+                <div id="cpVerdict" class="cp-verdict">尚未检查当前连接。</div>
+                <div id="cpBody" class="cp-body"></div>
+                <pre id="cpRaw" class="cp-raw" hidden></pre>
               </div>
 
             </section>
@@ -145,23 +162,8 @@
               <div class="form-row">
                 <label><svg class="ico"><use href="#i-keyboard" /></svg>中文输入法</label>
                 <p class="field-desc">内置万象拼音（简体词库）</p>
-                <div class="shortcuts"><kbd>Ctrl+Space</kbd> 切换输入法 <kbd>Shift</kbd> 中英切换</div>
+                <div class="shortcuts"><kbd>Shift</kbd> 中英切换 <kbd>Win+Space</kbd> 切换输入法（可能被 Windows 占用） <kbd>Ctrl+Space</kbd> 备用</div>
               </div>
-            </section>
-
-            <section class="tab-panel" data-panel="check">
-              <h2>环境检查</h2>
-              <p class="tab-sub" id="cpSub">检查代理出口的 IP、地区和网络组织。</p>
-              <div class="check-actions">
-                <button id="cpRerun" type="button" class="btn primary">开始检查</button>
-                <button id="cpFilter" type="button" class="btn ghost" hidden>显示全部</button>
-                <button id="cpRawToggle" type="button" class="btn ghost" disabled>原始输出</button>
-                <button id="cpExport" type="button" class="btn ghost" disabled>导出报告</button>
-              </div>
-              <div class="rp-note" id="rpNote" role="status"></div>
-              <div id="cpVerdict" class="cp-verdict">选择开始检查，查看当前环境状态。</div>
-              <div id="cpBody" class="cp-body"></div>
-              <pre id="cpRaw" class="cp-raw" hidden></pre>
             </section>
 
             <!-- 高级与重置 -->

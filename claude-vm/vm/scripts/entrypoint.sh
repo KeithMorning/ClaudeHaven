@@ -470,7 +470,7 @@ if [ "$INPUT_METHOD" = "rime" ]; then
       fcitx5-remote -o >/dev/null 2>&1 || true
       sleep 1
       fcitx5-remote -o >/dev/null 2>&1 || true
-      echo "[claude-vm] 输入法已启用：fcitx5 + Rime 万象拼音（Ctrl+Space 开关，Shift 中英）"
+      echo "[claude-vm] 输入法已启用：fcitx5 + Rime 万象拼音（Shift 中英，Win+Space / Ctrl+Space 开关）"
     else
       echo "[claude-vm] fcitx5 未能就绪，中文输入可能不可用（详见 /tmp/fcitx5.log）"
     fi

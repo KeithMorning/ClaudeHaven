@@ -13,6 +13,7 @@ let lastRaw = '';
 let lastError = '';
 let showAll = true;
 let lastTime = '';
+let checkGeneration = 0;
 
 function panelMessage(text, isError) {
   const d = document.createElement('div');
@@ -26,6 +27,7 @@ function renderVerdict(summary, cc, runtimeUp) {
   const v = $('cpVerdict');
   let kind = 'ok', text = '代理出口检查完成';
   if (!runtimeUp) { kind = 'warn'; text = '环境未运行，检查结果不完整'; }
+  else if (pass + warn + fail + (summary.info || 0) === 0) { kind = 'warn'; text = '没有获取到网络检查结果'; }
   else if (fail > 0) { kind = 'err'; text = `发现 ${fail} 项检查失败`; }
   else if (warn > 0) { kind = 'warn'; text = `检查完成，${warn} 项需要留意`; }
   v.className = 'cp-verdict ' + kind;
@@ -149,7 +151,7 @@ function buildExportHtml() {
   const d = lastData;
   const rows = [];
   rows.push('<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8">');
-  rows.push('<title>Claude VM 环境检查报告</title><style>');
+  rows.push('<title>Claude VM 检查报告</title><style>');
   rows.push('body{font-family:-apple-system,"Segoe UI",sans-serif;background:#14161a;color:#e6e8ec;margin:0;padding:32px;line-height:1.6}');
   rows.push('h1{font-size:20px;margin:0 0 4px}h2{font-size:14px;margin:24px 0 8px;color:#9aa4b5;border-bottom:1px solid #2a2f38;padding-bottom:6px}');
   rows.push('.sub{color:#8b93a3;font-size:12px;margin-bottom:20px}.pill{display:inline-block;border:1px solid #2a2f38;border-radius:999px;padding:2px 10px;margin-right:6px;font-size:12px}');
@@ -159,7 +161,7 @@ function buildExportHtml() {
   rows.push('.t{font-weight:600;font-size:13px}.v{float:right;color:#c7cedb;font-size:12px}.d,.a{font-size:11.5px;color:#8b93a3;margin-top:4px}.a{color:#b9c2d0}');
   rows.push('pre{background:#0f1115;border:1px solid #232833;border-radius:8px;padding:12px;overflow:auto;font-size:11px;color:#aab2c0}');
   rows.push('</style></head><body>');
-  rows.push('<h1>Claude VM · 环境检查报告</h1>');
+  rows.push('<h1>Claude VM · 检查报告</h1>');
   rows.push(`<div class="sub">生成时间 ${esc(lastTime)}</div>`);
   if (d) {
     const s = d.summary || {};
@@ -194,7 +196,7 @@ function render(res) {
   $('cpRaw').textContent = lastRaw;
   $('cpRawToggle').disabled = !lastRaw;
   $('cpRaw').hidden = true;
-  $('cpRawToggle').textContent = '原始输出';
+  $('cpRawToggle').textContent = '完整原始输出';
   $('cpBody').innerHTML = '';
   $('cpFilter').hidden = true;
   $('cpVerdict').className = 'cp-verdict';
@@ -212,7 +214,14 @@ function render(res) {
     $('rpNote').textContent = '检查未完成';
     return;
   }
-  const d = res.data;
+  const embedded = !!document.querySelector('[data-panel="network"]');
+  const d = embedded ? { ...res.data, groups: (res.data.groups || []).filter((g) => g.id === 'network' || g.id === 'consistency') } : res.data;
+  if (embedded) {
+    d.summary = { pass: 0, warn: 0, fail: 0, info: 0 };
+    for (const group of d.groups) for (const item of group.items || []) {
+      if (Object.hasOwn(d.summary, item.status)) d.summary[item.status]++;
+    }
+  }
   const s = d.summary || { pass: 0, warn: 0, fail: 0, info: 0 };
   renderVerdict(s, d.checkcc, d.runtimeUp);
   lastData = d;
@@ -223,6 +232,7 @@ function render(res) {
 async function doCheck() {
   const rerun = $('cpRerun');
   if (rerun.disabled) return;
+  const generation = checkGeneration;
   rerun.disabled = true;
   $('cpFilter').hidden = true;
   $('cpRaw').hidden = true;
@@ -233,13 +243,14 @@ async function doCheck() {
   $('cpBody').innerHTML = '';
   $('rpNote').textContent = '正在检测';
   try {
-    render(await window.api.check());
+    const result = await window.api.check();
+    if (generation === checkGeneration) render(result);
   } catch (error) {
-    render({ ok: false, error: error?.message });
+    if (generation === checkGeneration) render({ ok: false, error: error?.message });
   } finally {
     rerun.disabled = false;
     rerun.textContent = '重新检测';
-    $('cpExport').disabled = false;
+    $('cpExport').disabled = generation !== checkGeneration;
   }
 }
 
@@ -247,12 +258,26 @@ async function doCheck() {
 if (!window.api) {
   window.__noop = true;
 } else {
+  window.addEventListener('network-check-stale', () => {
+    checkGeneration++;
+    lastData = null;
+    lastRaw = '';
+    $('cpSub').textContent = '连接状态或配置已变化，请重新检查。';
+    $('cpVerdict').className = 'cp-verdict';
+    $('cpVerdict').textContent = '上次结果已失效。';
+    $('cpBody').innerHTML = '';
+    $('cpRaw').hidden = true;
+    $('cpRawToggle').disabled = true;
+    $('cpExport').disabled = true;
+    $('cpFilter').hidden = true;
+    $('rpNote').textContent = '';
+  });
   $('cpRerun').addEventListener('click', doCheck);
   $('cpFilter').addEventListener('click', () => { showAll = !showAll; paintBody(); });
   $('cpRawToggle').addEventListener('click', () => {
     const raw = $('cpRaw');
     raw.hidden = !raw.hidden;
-    $('cpRawToggle').textContent = raw.hidden ? '原始输出' : '收起原始输出';
+    $('cpRawToggle').textContent = raw.hidden ? '完整原始输出' : '收起原始输出';
   });
   $('cpExport').addEventListener('click', async () => {
     const btn = $('cpExport');
@@ -271,6 +296,6 @@ if (!window.api) {
       btn.textContent = old;
     }
   });
-  if (!document.querySelector('[data-panel="check"]')) doCheck();
+  if (!document.querySelector('[data-panel="network"]')) doCheck();
 }
 })();

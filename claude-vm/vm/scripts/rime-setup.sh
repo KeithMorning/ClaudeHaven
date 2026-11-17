@@ -34,6 +34,9 @@ set -u
 
 need=0
 command -v fcitx5 >/dev/null 2>&1 || need=1
+# X11 模块属于推荐依赖，--no-install-recommends 不会自动安装；缺少它时
+# classicui 无法连接 X server 并在 tint2 托盘显示输入法状态。
+[ -f /usr/share/fcitx5/addon/xcb.conf ] || need=1
 [ -f /usr/share/rime-data/stroke.schema.yaml ] || need=1
 # GTK3 原生输入模块 + GTK 终端。缺了 im-fcitx5.so，GTK 应用会整体
 # 降级到 XIM（fcitx5 没有 XIM 前端 = 输入直接哑掉）；缺了 lxterminal 就没终端。
@@ -56,7 +59,7 @@ if [ "$need" = "1" ]; then
   # 字体回退是按需的：Noto 已有的字仍走 Noto，只有缺字形的才落到 HanaMin。
   # --no-install-recommends 依旧保证不带进任何名单内中文字体包。
   if ! apt-get install -y --no-install-recommends \
-        fcitx5 fcitx5-rime fcitx5-frontend-gtk3 rime-data-stroke lxterminal \
+        fcitx5 fcitx5-rime fcitx5-frontend-gtk3 fcitx5-module-xorg rime-data-stroke lxterminal \
         fonts-hanazono \
         >/tmp/rime-setup.log 2>&1; then
     echo "[rime] 安装失败，详见 /tmp/rime-setup.log"
@@ -121,8 +124,19 @@ patch:
 YAML
 
 # fcitx5 的输入法组配置：默认引擎设为 rime（写 profile，无图形界面也能配）。
-# 触发键用 fcitx5 默认的 Ctrl+Space；中英切换是 Rime 内部的 Shift，不动。
+# 单按 Shift 在 Rime 中切换中英文；输入法开关支持 Super+Space 和 Ctrl+Space。
 mkdir -p /root/.config/fcitx5
+# 安装随应用同步的候选框主题；老安装包没有资源时沿用原主题。
+_theme=/opt/assets/config/fcitx5/claude
+[ -f "$_theme/theme.conf" ] || _theme=/opt/config/fcitx5/claude
+if [ -f "$_theme/theme.conf" ]; then
+  mkdir -p /root/.local/share/fcitx5/themes/claude /root/.config/fcitx5/conf
+  cp -f "$_theme"/* /root/.local/share/fcitx5/themes/claude/
+  _classic=/root/.config/fcitx5/conf/classicui.conf
+  touch "$_classic"
+  { printf 'Theme=claude\nFont=Sans 12\n'; sed '/^Theme=/d; /^Font=/d' "$_classic"; } > "$_classic.tmp"
+  mv -f "$_classic.tmp" "$_classic"
+fi
 cat > /root/.config/fcitx5/profile <<'PROFILE'
 [Groups/0]
 Name=Default
@@ -147,6 +161,10 @@ PROFILE
 # 关掉「在应用中显示预编辑」，让 classicui 自己画编码：零候选时窗口仍保持
 # IsViewable 并显示输入码。配置项来自 fcitx5 核心库的 PreeditEnabledByDefault。
 cat > /root/.config/fcitx5/config <<'CONF'
+[Hotkey/TriggerKeys]
+0=Super+space
+1=Control+space
+
 [Behavior]
 PreeditEnabledByDefault=False
 CONF

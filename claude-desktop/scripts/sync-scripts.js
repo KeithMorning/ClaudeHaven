@@ -31,6 +31,11 @@ const ASSETS = [
   // Openbox 鼠标绑定：补齐标题栏 CloseButton 等 context，串流桌面里 ✕ 才点得动。
   // 走 assets 同步（entrypoint 优先读它），不必重建 rootfs。
   ['config/openbox-rc.xml', 'config/openbox-rc.xml'],
+  ['config/fcitx5/claude/theme.conf', 'config/fcitx5/claude/theme.conf'],
+  ['config/fcitx5/claude/panel.png', 'config/fcitx5/claude/panel.png'],
+  ['config/fcitx5/claude/highlight.png', 'config/fcitx5/claude/highlight.png'],
+  ['config/fcitx5/claude/prev.png', 'config/fcitx5/claude/prev.png'],
+  ['config/fcitx5/claude/next.png', 'config/fcitx5/claude/next.png'],
   ['config/themes/Claude/openbox-3/themerc', 'config/themes/Claude/openbox-3/themerc'],
   ['config/themes/Claude/openbox-3/close.xbm', 'config/themes/Claude/openbox-3/close.xbm'],
   ['config/themes/Claude/openbox-3/max.xbm', 'config/themes/Claude/openbox-3/max.xbm'],

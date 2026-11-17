@@ -38,7 +38,10 @@ contextBridge.exposeInMainWorld('api', {
   stop: () => ok(),
   reset: () => ok(),
   status: () => ok(),
-  check: () => ok(),
+  check: () => ok({ data: { runtimeUp: 1, summary: { pass: 1, fail: 1, warn: 0, info: 0 }, groups: [
+    { id: 'network', title: '内核与出口', items: [{ status: 'fail', label: 'DNS 归属', value: '未接管' }] },
+    { id: 'desktop', title: '浏览器与运行环境', items: [{ status: 'pass', label: '浏览器', value: '正常' }] },
+  ] } }),
   netStatus: () => ok({ state: 'guarded', exit_ip: '38.150.32.117' }),
   probeWsl: () => ok(),
   pickClashYaml: () => ok({ canceled: true }),

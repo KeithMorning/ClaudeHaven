@@ -318,8 +318,14 @@ function updateSbGuard(g) {
   el.title = g.message || label;
 }
 
-function showGuard(g) { updateSbGuard(g); }
-function clearGuard() { updateSbGuard(null); }
+let lastGuardState = null;
+function showGuard(g) {
+  const state = g ? `${g.state || ''}:${g.reason || ''}` : null;
+  if (lastGuardState !== null && state !== lastGuardState) window.dispatchEvent(new Event('network-check-stale'));
+  lastGuardState = state;
+  updateSbGuard(g);
+}
+function clearGuard() { lastGuardState = null; updateSbGuard(null); }
 
 // ---------- 设置弹窗 / 浮层 ----------
 function openOverlay(id) { $(id).hidden = false; }
@@ -337,7 +343,7 @@ function switchTab(tab) {
 }
 
 function openEnvironmentCheck() {
-  switchTab('check');
+  switchTab('network');
   openOverlay('settingsOverlay');
 }
 
@@ -410,6 +416,7 @@ function wireStageFocus() {
 
 /** 启动成功后显示串流画面（唯一显示模式）。 */
 function showDesktop(r, forceReload) {
+  window.dispatchEvent(new Event('network-check-stale'));
   running = true;
   $('placeholder').hidden = true;
   const v = $('view');
@@ -435,6 +442,7 @@ function showDesktop(r, forceReload) {
 }
 
 function hideDesktop() {
+  window.dispatchEvent(new Event('network-check-stale'));
   running = false;
   stopClipboardBridge();
   const v = $('view');
@@ -586,12 +594,13 @@ if (!window.api) {
   $('sbGuard').addEventListener('click', openEnvironmentCheck);
 
   // ---- 表单 ----
-  $('clashYamlPath').addEventListener('change', () => { save(); renderYamlHint(); refreshNodes(); });
+  $('clashYamlPath').addEventListener('change', () => { window.dispatchEvent(new Event('network-check-stale')); save(); renderYamlHint(); refreshNodes(); });
   $('workspace').addEventListener('change', () => {
     save();
     if (running) setHint('工作区已更改，停止后重新启动生效', 'warn');
   });
   $('selectedNode').addEventListener('change', () => {
+    window.dispatchEvent(new Event('network-check-stale'));
     save();
     $('nodeHint').textContent = nodeHintText();
     updateLatency(nodeDelays[$('selectedNode').value]);
@@ -617,6 +626,7 @@ if (!window.api) {
     }
   });
   $('strictRegion').addEventListener('change', () => {
+    window.dispatchEvent(new Event('network-check-stale'));
     save();
     if (running) setHint('地区严格校验已改，点「停止」再「启动」生效', 'warn');
   });
@@ -626,6 +636,7 @@ if (!window.api) {
     const r = await window.api.pickClashYaml();
     if (!r || r.canceled) return;
     if (!r.ok) { setHint(r.error || '选择失败', 'err'); return; }
+    window.dispatchEvent(new Event('network-check-stale'));
     $('clashYamlPath').value = r.path;
     cfg.clashYamlPath = r.path;
     cfg.selectedNode = '';

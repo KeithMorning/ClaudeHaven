@@ -717,9 +717,9 @@ test('2.1：主界面骨架（顶栏 / 舞台 / 单行状态信息栏 / 设置�
                     'settingsHint', 'sbPersona', 'sbLatency', 'sbGuard', 'sbItems']) {
     assert.match(html, new RegExp(`id="${id}"`), `主界面缺少 ${id}`);
   }
-  assert.strictEqual([...html.matchAll(/\bdata-tab="([^"]+)"/g)].length, 5,
-    '设置弹窗要有 5 个 tab 导航');
-  assert.strictEqual([...html.matchAll(/\bdata-panel="([^"]+)"/g)].length, 5,
+  assert.strictEqual([...html.matchAll(/\bdata-tab="([^"]+)"/g)].length, 4,
+    '设置弹窗要有 4 个 tab 导航');
+  assert.strictEqual([...html.matchAll(/\bdata-panel="([^"]+)"/g)].length, 4,
     '设置弹窗要有 4 个内容面板');
   assert.match(html, /wave-bg|stage-waves/, '串流舞台要有波浪背景');
   assert.strictEqual([...html.matchAll(/class="sb-row/g)].length, 1,
@@ -831,9 +831,9 @@ test('App Icon：SVG 真源、PNG 导出与三处接线齐全', () => {
     'app-icon.svg / .png 必须随 asar 打包');
 });
 
-test('环境检查入口位于设置中', () => {
+test('网络检查入口位于网络与安全中', () => {
   const js = readRel('claude-desktop/app/renderer/renderer.js');
-  assert.match(js, /switchTab\('check'\)/, '状态栏可以打开设置中的环境检查');
+  assert.match(js, /switchTab\('network'\)/, '状态栏可以打开网络与安全');
   assert.ok(!js.includes("openOverlay('checkOverlay')"),
     '检查浮层本轮不接线（下一轮做环境检查时请同步更新这条断言）');
   const html = readRel('claude-desktop/app/renderer/report.html');
