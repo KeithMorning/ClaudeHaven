@@ -22,7 +22,15 @@
 
 Claude Haven 是一个面向 Claude Code 的 Windows 桌面工作台。它在 WSL2 中运行 Linux 桌面，把常用开发工具放在同一处，同时让你选择哪些项目文件夹需要与 Windows 共享。
 
-> **当前为开发预览版。** 目前面向 Windows x64 + WSL2，尚未发布正式安装包；macOS 和 Linux 桌面端暂不支持。
+> **v0.1.0 开发预览版** · 面向 Windows x64。macOS 和 Linux 桌面端暂不支持。
+
+## 安装即用
+
+从 [GitHub Releases](https://github.com/KeithMorning/ClaudeVM/releases/latest) 下载 Windows 安装包并按提示安装。安装包已包含 Linux 运行时，日常使用不需要另外安装 Node.js、Rust、Docker，也不用手动准备 Linux 镜像。
+
+首次启动时，Claude Haven 会检查并准备 WSL2 环境；如果系统尚未启用 WSL，应用会引导安装并请求管理员授权，部分电脑需要重启一次。随后在「系统设置」中选择 Clash / Mihomo 配置和出口节点，在「工作区」中选择要共享的文件夹，就可以启动虚拟桌面。
+
+整个流程由应用引导完成，无需打开命令行。网络配置和 WSL2 是首次使用时需要完成的两项准备。
 
 ## 核心体验
 
@@ -32,13 +40,21 @@ Claude Haven 是一个面向 Claude Code 的 Windows 桌面工作台。它在 WS
 | **中文输入与复制粘贴** | **关闭后继续运行** | **本地配置** |
 | 使用 fcitx5 / Rime 中文输入法，支持 Windows 与虚拟桌面之间的文本复制粘贴。 | 关闭窗口会收进系统托盘并保留会话；从托盘选择退出才会停止环境。 | Clash / Mihomo 配置在本机导入，选择出口节点后由虚拟环境使用。 |
 
+## 运行界面
+
+![Claude Haven 虚拟桌面运行界面](assets/screenshots/claude-haven-running.png)
+
+浏览器也可以直接在虚拟桌面中使用。
+
+![Claude Haven 虚拟桌面中的浏览器](assets/screenshots/claude-haven-browser.png)
+
 ## 快速开始
 
-### 运行要求
+### 从源码运行（开发者）
 
-- Windows x64，已启用 WSL2
+- Windows x64
 - Node.js、Rust MSVC 工具链、C++ Build Tools 和 WebView2
-- Linux 运行时镜像 `rootfs.tar.gz`。镜像体积较大，不放在 Git 仓库中
+- Linux 运行时镜像 `rootfs.tar.gz`（发布安装包已内置；开发时需单独准备）
 
 ### 启动开发版
 
@@ -85,12 +101,12 @@ npm run build
 
 | 项目 | 状态 |
 | --- | --- |
-| Windows x64 桌面应用 | 开发预览 |
+| Windows x64 桌面应用 | v0.1.0 开发预览 |
 | WSL2 Linux 虚拟桌面 | 支持，仍在验证不同 Windows 环境 |
 | 中文输入、双向文本剪贴板、共享文件夹 | 已实现 |
 | Mihomo / TUN 网络保护与启动出口检查 | 已实现，检查边界见上文 |
 | macOS / Linux 原生桌面应用 | 暂不支持 |
-| 正式签名安装包与自动更新 | 尚未提供 |
+| 正式代码签名与自动更新 | 尚未提供 |
 
 ## 项目结构
 
