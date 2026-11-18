@@ -12,6 +12,8 @@
 
 MODE=text
 [ "${1:-}" = "--json" ] && MODE=json
+SCOPE=all
+if [ "${1:-}" = "--network-json" ]; then MODE=json; SCOPE=network; fi
 
 # 独立会话（桌面程序点「自检」）继承不到 entrypoint 导出的变量，先读回落盘的环境
 if [ -f /opt/config/runtime-env ]; then
@@ -69,6 +71,7 @@ _pick() { printf '%s' "$1" | sed -n "s/.*\"$2\"[[:space:]]*:[[:space:]]*\"\([^\"
 # ------------------------------------------------------------
 # 1. 地区与语言
 # ------------------------------------------------------------
+if [ "$SCOPE" = all ]; then
 _tzsys=$(cat /etc/timezone 2>/dev/null)
 # 以「浏览器/JS 实际读到的时区」为准：Chrome 与 Node 都按 TZ 环境变量解析
 _intl_tz=$(node -e "console.log(new Intl.DateTimeFormat().resolvedOptions().timeZone)" 2>/dev/null)
@@ -260,6 +263,7 @@ else
   add desktop info "环境身份" "尚未初始化" \
     "首次启动时生成一次独立的主机名与 machine-id；环境未运行时不需要这一项。" ""
 fi
+fi # SCOPE=all
 
 # ------------------------------------------------------------
 # 3. 容器内内核与出口（2.0：mihomo + TUN 全量接管）
@@ -288,7 +292,7 @@ if [ "$RUNTIME_UP" != "1" ]; then
   add network info "TUN 网卡" "环境未运行" "环境启动后才会创建 Meta 网卡。" ""
 elif [ "$META_UP" = "1" ]; then
   add network pass "TUN 网卡" "Meta 已就绪" \
-    "table 2022 覆盖路由把全部流量送进 TUN，DNS/UDP/IPv6 一并接管。" ""
+    "已检测到 Meta 网卡；这本身不能证明所有流量都经过代理。" ""
 else
   add network fail "TUN 网卡" "Meta 不存在" \
     "没有 TUN 网卡说明流量没被接管，此时不应放行业务。" \
@@ -315,16 +319,29 @@ if [ "$RUNTIME_UP" = "1" ]; then
 fi
 
 add network info "选中节点" "${TUN_NODE:-（未选择）}" \
-  "全量单节点模式：所有流量走这一个节点，订阅原有的 proxy-groups / rules 被忽略。" \
+  "这是启动时保存的节点名称；实际出口需结合其他网络检查。" \
   "换节点会进配置指纹，点「停止 → 启动」后生效。"
 
 # 出口一致性：同一时刻问三个独立源，必须给出同一个 IP
 _s1=$(curl -s --max-time 8 https://api.ipify.org 2>/dev/null | tr -d '[:space:]')
 _s2=$(curl -s --max-time 8 https://ipinfo.io/ip 2>/dev/null | tr -d '[:space:]')
 _s3=$(curl -s --max-time 8 https://api.ip.sb/ip 2>/dev/null | tr -d '[:space:]')
-_uniq=$(printf '%s\n%s\n%s\n' "$_s1" "$_s2" "$_s3" | grep -E '^[0-9a-fA-F:.]{7,}$' | sort -u | tr '\n' ' ')
-_n=$(printf '%s' "$_uniq" | wc -w | tr -d ' ')
-_responded=$(printf '%s\n%s\n%s\n' "$_s1" "$_s2" "$_s3" | grep -Ec '^[0-9a-fA-F:.]{7,}$' || true)
+mapfile -t _ip_check < <(printf '%s\n%s\n%s\n' "$_s1" "$_s2" "$_s3" | python3 -c '
+import ipaddress, sys
+addresses = []
+for line in sys.stdin:
+    try:
+        addresses.append(str(ipaddress.ip_address(line.strip())))
+    except ValueError:
+        pass
+unique = sorted(set(addresses))
+print(len(addresses))
+print(len(unique))
+print(" ".join(unique))
+' | tr -d '\r')
+_responded=${_ip_check[0]:-0}
+_n=${_ip_check[1]:-0}
+_uniq=${_ip_check[2]:-}
 if [ "${_n:-0}" -eq 0 ]; then
   add network warn "多源出口一致性" "无法验证" \
     "三个 IP 情报源都没有返回地址，内核或选中节点此刻不可用。" \
@@ -355,11 +372,11 @@ fi
 # Anthropic 可达性（裸 curl）
 _code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 https://api.anthropic.com 2>/dev/null)
 if [ -n "$_code" ] && [ "$_code" != "000" ]; then
-  add network pass "Anthropic 可达" "HTTP $_code" \
-    "api.anthropic.com 返回了 HTTP 状态码；这只说明收到了响应。" ""
+  add network info "Anthropic 接口响应" "HTTP $_code" \
+    "api.anthropic.com 返回了 HTTP 状态码；不代表账号、地区或 API 调用已通过验证。" ""
 else
-  add network fail "Anthropic 可达" "无响应" \
-    "Claude Code 会直接不可用。检查选中的节点是否可达、出口是否落在受限地区。" \
+  add network warn "Anthropic 接口响应" "无响应" \
+    "本次请求没有获得 HTTP 响应；可能是节点、目标服务或暂时的网络问题。" \
     "在设置里换一个节点后「停止 → 启动」。"
 fi
 
@@ -368,11 +385,14 @@ _ua='Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chro
 _ca=$(curl -sI --max-time 10 -A "$_ua" https://claude.ai/ 2>/dev/null)
 if printf '%s' "$_ca" | grep -qi 'cf-mitigated:[[:space:]]*challenge'; then
   add network warn "claude.ai 人机校验" "被 CF 挑战（403）" \
-    "Cloudflare 把当前节点判为可疑；跨域探活会被 CORP 头挡掉，看起来像超时。" \
-    "换住宅/ISP 节点可显著缓解；网页里遇到验证码通过即可继续登录。"
+    "本次 curl HEAD 响应包含 Cloudflare challenge 标记；不能代表实际浏览器登录结果。" \
+    "可在虚拟桌面浏览器中核对实际访问情况。"
 elif printf '%s' "$_ca" | grep -qE '^HTTP/[0-9.]+ 200'; then
   add network pass "claude.ai 人机校验" "未触发" \
-    "claude.ai 直接返回页面，当前节点没有被判为可疑。" ""
+    "本次 curl HEAD 请求收到 HTTP 200；不能代表浏览器登录时的结果。" ""
+else
+  add network info "claude.ai 人机校验" "本次无法判断" \
+    "此项仅检查 curl HEAD 响应，未获得可判断的结果；不代表浏览器已通过或失败。" ""
 fi
 
 # 系统 DNS：只判断有没有企业后缀污染
@@ -381,9 +401,12 @@ if [ -n "$_sfx" ]; then
   add network warn "系统 DNS" "残留企业后缀 ${_sfx#* }" \
     "WSL 把宿主网卡的 DNS 搜索域写进了 resolv.conf，会混进诊断包与应用日志。" \
     "重启环境让 entrypoint 自动清掉；或在 /etc/wsl.conf 加 [network] generateResolvConf=false。"
+elif [ -n "${_dns:-}" ]; then
+  add network info "DNS 搜索域" "未配置搜索域" \
+    "仅检查 resolv.conf 中的 search 和 domain；DNS 服务器请参考 DNS 归属。" ""
 else
-  add network pass "系统 DNS" "127.0.0.1（无企业后缀）" \
-    "DNS 由容器内内核接管，没有宿主继承的企业搜索域。" ""
+  add network warn "DNS 搜索域" "无法确认 DNS 配置" \
+    "没有读取到 DNS 服务器，不能将缺少搜索域视为 DNS 正常。" "检查虚拟环境中的 resolv.conf。"
 fi
 
 # ------------------------------------------------------------
@@ -406,8 +429,8 @@ _GUARD_TS="$([ -f "$_GS" ] && _kv ts || echo 0)"
 
 case "$_GUARD_STATE" in
   guarded)
-    add network pass "网络熔断" "已锁定（fail-closed）" \
-      "默认路由已移除、IPv6 已关闭：内核退出时 TUN 与策略路由一起消失，立刻全断，不会回落到本机直连。" "" ;;
+    add network info "网络守卫状态" "守卫报告已锁定" \
+      "此项来自守卫状态文件；请同时查看路由状态和守卫心跳。" "" ;;
   blocked)
     add network fail "网络熔断" "已封锁 · $_GUARD_REASON" \
       "$_GUARD_MSG" "按提示修好节点/内核后，点「停止」再「启动」重新预检；这期间网络保持切断。" ;;
@@ -454,22 +477,34 @@ case "$_GUARD_REASON" in
 esac
 
 _now=$(date +%s)
-if [ -f "$_GS" ] && [ -n "$_GUARD_TS" ] && [ "$_GUARD_STATE" != "off" ]; then
+_guard_pid=$(cat /run/claude-vm/net-guard.pid 2>/dev/null)
+if ! [[ "$_guard_pid" =~ ^[0-9]+$ ]] || ! kill -0 "$_guard_pid" 2>/dev/null \
+   || ! tr '\0' ' ' < "/proc/$_guard_pid/cmdline" 2>/dev/null | grep -q 'net-guard.sh'; then
+  add network warn "守卫心跳" "守卫进程未确认" \
+    "无法确认状态文件对应的守卫进程仍在运行。" "检查守卫进程与网络保护状态。"
+elif [ -f "$_GS" ] && [[ "$_GUARD_TS" =~ ^[0-9]+$ ]] && [ "$_GUARD_STATE" != "off" ]; then
   _age=$((_now - _GUARD_TS))
   if [ "$_age" -gt 30 ]; then
     add network warn "守卫心跳" "已停滞 ${_age} 秒" \
       "看门狗超过 30 秒没有刷新状态，熔断规则可能已失去周期性 re-assert 保护。" \
       "点「停止」再「启动」重建会话。"
+  elif [ "$_age" -lt -5 ]; then
+    add network warn "守卫心跳" "时间戳异常" \
+      "守卫状态时间晚于当前系统时间，无法确认心跳。" "检查系统时间和守卫状态。"
   else
     add network pass "守卫心跳" "正常（${_age} 秒前刷新）" \
       "守卫状态文件最近一次刷新距今 ${_age} 秒。" ""
   fi
+else
+  add network warn "守卫心跳" "无法读取心跳" \
+    "守卫状态或时间戳不可用，无法确认其最新状态。" "检查守卫状态后重试。"
 fi
 fi
 
 # ------------------------------------------------------------
 # 2.5) 中文输入法（可选，仅 INPUT_METHOD=rime 时要求 fcitx5 正常）
 # ------------------------------------------------------------
+if [ "$SCOPE" = all ]; then
 _IM="${INPUT_METHOD:-off}"
 if [ "$RUNTIME_UP" != "1" ]; then
   add desktop info "中文输入法" "环境未运行" \
@@ -490,6 +525,7 @@ else
     "fcitx5 没能在会话总线上注册，终端里可能打不出中文。" \
     "点「停止」再「启动」重建会话；反复失败查看 /tmp/fcitx5.log。"
 fi
+fi # SCOPE=all
 
 # 出口信息：裸 curl 探测（流量自然进 TUN）
 _eg=$(curl -s --max-time 10 https://ipinfo.io/json 2>/dev/null)
@@ -511,7 +547,7 @@ fi
 
 # 节点延迟：主界面「测延迟」经内核控制 API 实测后落盘，自检只读结果，
 # 不在这里重新发起一轮测速（那会让每次检查多等十几秒）。
-if [ -f /opt/scripts/node-delay.py ]; then
+if [ "$SCOPE" = all ] && [ -f /opt/scripts/node-delay.py ]; then
   _nd_line=$(python3 /opt/scripts/node-delay.py --summary 2>/dev/null)
   if [ -n "$_nd_line" ]; then
     add network pass "节点延迟" "$_nd_line" \
@@ -540,52 +576,9 @@ if [ -n "$_eorg" ]; then
   fi
 fi
 
-# ------------------------------------------------------------
-# 3.9. check-cc 口径自评：把它报告顶上那个百分比自己算出来
-# ------------------------------------------------------------
-# 它的评分结构已经解出来了：那个百分比 = signals[].contribution 之和，
-# weight 是该项最多扣多少。这两个字段在返回体里是**明文数字**
-#（只有 label / value 被 "Z_" 前缀加密），所以不用解密就能自己求和。
-#
-# 为什么要自己算：checkcc 只跑一遍浏览器，每次都得靠用户截图；而这里可以经同一条
-# 代理直接问它，把「服务端能观测到的」量出来，再补上只有浏览器才测得到的项。
-# 请求头必须伪装完整 —— 少了 Accept / sec-ch-ua / Sec-Fetch-* 这些，它会额外判
-# 「请求头完整性偏低」再扣 8 分，那是 curl 的特征，不是用户的。
-CC_SERVER=0; CC_BROWSER=0; CC_TOTAL=0
-if [ -n "${_eip:-}" ] && [ "$CORE_UP" = "1" ]; then
-  _ccjson=$(curl -s --compressed --max-time 15 \
-    -A 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36' \
-    -H 'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8' \
-    -H 'Accept-Language: en-US,en;q=0.9' \
-    -H 'Accept-Encoding: gzip, deflate, br' \
-    -H 'sec-ch-ua: "Chromium";v="156", "Not_A Brand";v="24"' \
-    -H 'sec-ch-ua-mobile: ?0' -H 'sec-ch-ua-platform: "Linux"' \
-    -H 'Sec-Fetch-Site: none' -H 'Sec-Fetch-Mode: navigate' \
-    -H 'Sec-Fetch-User: ?1' -H 'Sec-Fetch-Dest: document' \
-    -H 'Upgrade-Insecure-Requests: 1' -H 'Referer: https://checkcc.org/' \
-    "https://api.checkcc.org/check?region=cn&lang=en-US&t=$(date +%s)000" 2>/dev/null)
-  CC_SERVER=$(printf '%s' "$_ccjson" | grep -oE '"n9Uy":[[:space:]]*[0-9]+' \
-    | grep -oE '[0-9]+$' | awk '{s+=$1} END{printf "%d", s+0}')
-  if [ "${CC_SERVER:-0}" -ge 1 ] && [ "${CC_SERVER:-0}" -le 100 ]; then
-    # 浏览器侧还有一项 curl 测不到：claude.ai 的跨域探活。
-    # 它以 fetch(mode:'no-cors') 打 https://claude.ai/，被 CF 挑战页的
-    # `cross-origin-resource-policy: same-origin` 挡掉，前端记为异常 → 扣 6 分。
-    printf '%s' "${_ca:-}" | grep -qi 'cf-mitigated:[[:space:]]*challenge' && CC_BROWSER=6
-    CC_TOTAL=$((CC_SERVER + CC_BROWSER))
-    case "${_n:-0}" in
-      1) _pd="本轮本地三源一致（${_uniq% }）" ;;
-      0) _pd="本轮本地三源都没返回地址" ;;
-      *) _pd="本轮本地三源出现分叉：${_uniq% }" ;;
-    esac
-    add network info "checkcc 估算" "${CC_TOTAL} 分（估算）" \
-      "根据接口字段和本地规则估算。浏览器实际检测涉及更多信息，结果可能不同。" \
-      "如需核对，请在浏览器中运行检测。"
-  else
-    add network info "checkcc 口径" "未能取分" \
-      "拿到了接口返回，但没能读出评分字段（它的字段名是混淆的，可能已改版）。" \
-      "这不影响其它检查项；想核对分数请直接在浏览器里跑一次检测站。"
-  fi
-fi
+# Legacy JSON fields remain null for older report consumers. We do not infer a
+# third-party browser score from undocumented API fields or send a checkcc request.
+CC_SERVER=null; CC_BROWSER=null; CC_TOTAL=null
 
 # ------------------------------------------------------------
 # 4. 一致性判断
@@ -596,20 +589,18 @@ fi
 #    旧版这里有个 _expected_cc() 按时区反推期望国家，不匹配就判 fail 并建议改地区，
 #    逻辑错误且映射表漏了 Asia/Taipei，导致默认台北画像下整项被静默跳过。1.0.25 删除。
 # ------------------------------------------------------------
-_ecc_u=$(printf '%s' "${_ecc:-}" | tr 'a-z' 'A-Z')
-case ",$_ecc_u," in
-  *,CN,*|*,HK,*|*,MO,*)
-    add consistency fail "出口受限地区" "出口 ${_ecc}" \
-      "出口落在 CN/HK/MO 受限名单内，多半是选中的节点在国内。" \
-      "在设置里换一个境外节点，然后「停止 → 启动」。" ;;
+_region_status=$(python3 /opt/scripts/claude-supported-regions.py "${_ecc:-}" 2>/dev/null || true)
+case "$_region_status" in
+  supported)
+    add consistency pass "出口地区" "${_ecc}" \
+      "IP 信息服务报告的地区在本地官方名单快照中，不代表实际所在地或账号资格。" "" ;;
+  unsupported)
+    add consistency fail "出口地区" "${_ecc}" \
+      "IP 信息服务报告的地区不在本地官方名单快照中。" \
+      "核对官方支持地区与所选节点。" ;;
   *)
-    if [ -n "$_ecc" ]; then
-      add consistency pass "出口地区" "${_ecc}（系统 ${TZ:-未知}）" \
-        "出口不在受限名单内。时区与出口国家不同是正常的 VPN 使用形态，不做一致性扣分。" ""
-    else
-      add consistency info "出口地区" "出口未知" \
-        "出口地区探测失败，无法判断；代理不可用时熔断会保持网络切断。" ""
-    fi ;;
+    add consistency warn "出口地区" "无法确认" \
+      "没有取得有效地区信息或支持地区名单不可用。" "检查网络后重试。" ;;
 esac
 
 if [ -n "$_ecc" ]; then
@@ -677,7 +668,7 @@ emit_json() {
 
   printf '{"version":1,"runtimeUp":%s,"regionLabel":"%s","tz":"%s","lang":"%s",' \
     "$RUNTIME_UP" "$(jesc "$REGION_LABEL")" "$(jesc "${TZ:-}")" "$(jesc "${LANG:-}")"
-  # 检测站口径的自评分数（0 = 未取到）。界面直接显示，省得用户再去网站跑一遍。
+  # Historical fields retained for older clients; null means unavailable.
   printf '"checkcc":{"total":%s,"serverSide":%s,"browserSide":%s},' \
     "${CC_TOTAL:-0}" "${CC_SERVER:-0}" "${CC_BROWSER:-0}"
   printf '"summary":{"pass":%d,"warn":%d,"fail":%d,"info":%d},"groups":[' \

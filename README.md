@@ -1,81 +1,111 @@
 <div align="center">
-
-<img src="claude-desktop/app/renderer/assets/app-icon.svg" alt="Claude VM" width="112" />
-
-# Claude VM
-
-**在 Windows 上运行独立的 Linux 桌面，为 Claude Code 准备工作空间。**
-
-[下载 Windows 安装包](https://github.com/KeithMorning/ClaudeVM/releases) · [使用与构建文档](doc/index.md) · [反馈问题](https://github.com/KeithMorning/ClaudeVM/issues)
-
-[![Version](https://img.shields.io/badge/version-2.1.0-orange)](https://github.com/KeithMorning/ClaudeVM/releases) ![Platform](https://img.shields.io/badge/platform-Windows%20x64-blue) [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
-
+  <img src="assets/brand/claude-vm-logo.png" alt="Claude VM 标志" width="132" />
+  <h1>Claude VM</h1>
+  <p><strong>让 Claude Code 拥有自己的桌面工作区</strong></p>
+  <p>在 Windows 上，把终端、浏览器与项目文件放进一张专注的 Linux 桌面。</p>
+  <p>
+    <img src="https://img.shields.io/badge/Windows-WSL2-20232a?style=flat-square" alt="Windows and WSL2" />
+    <img src="https://img.shields.io/badge/Desktop-Tauri%202-24C8DB?style=flat-square" alt="Tauri 2" />
+    <img src="https://img.shields.io/badge/status-development%20preview-EA895C?style=flat-square" alt="Development preview" />
+    <a href="LICENSE"><img src="https://img.shields.io/github/license/KeithMorning/ClaudeVM?style=flat-square" alt="MIT License" /></a>
+  </p>
+  <p>
+    <a href="#快速开始">快速开始</a> ·
+    <a href="#核心体验">核心体验</a> ·
+    <a href="#安全与数据边界">安全与数据边界</a> ·
+    <a href="claude-tauri/README.md">开发说明</a> ·
+    <a href="#参与项目">参与项目</a>
+  </p>
 </div>
 
-Claude VM 是一个 Windows 桌面应用。它使用 WSL2 运行 Linux 桌面，将 Chrome、Claude Code、中文输入法和网络配置集中在一个工作空间中。你的文件通过共享目录在 Windows 和虚拟环境之间访问。
+---
 
-| 启动前 | 虚拟桌面 |
-| :---: | :---: |
-| <a href="doc/images/ui-idle.png"><img src="doc/images/ui-idle.png" alt="Claude VM 启动界面" width="400" /></a> | <a href="doc/images/ui-running.png"><img src="doc/images/ui-running.png" alt="Claude VM 虚拟桌面" width="400" /></a> |
+Claude VM 是一个面向 Claude Code 的 Windows 桌面工作台。它在 WSL2 中运行 Linux 桌面，把常用开发工具放在同一处，同时让你选择哪些项目文件夹需要与 Windows 共享。
 
-## 当前支持
+> **当前为开发预览版。** 目前面向 Windows x64 + WSL2，尚未发布正式安装包；macOS 和 Linux 桌面端暂不支持。
 
-- **Windows x64**：通过 WSL2 运行，Windows 10 / 11 家庭版也可使用 WSL2。系统需要支持并启用硬件虚拟化，以及「适用于 Linux 的 Windows 子系统」「虚拟机平台」组件。首次启动时导入随安装包提供的 Linux 运行时。
-- **macOS / Linux**：目前没有正式支持，也没有经过完整发布验证。仓库中保留的相关代码和历史文档不代表可用的正式版本。
+## 核心体验
 
-## 安装与开始使用
+| 一张完整桌面 | 网络保护 | 按需共享项目 |
+| --- | --- | --- |
+| 在同一个 Linux 桌面中使用 Claude Code、浏览器、终端和文件管理器。 | 内置 Mihomo 与 TUN。启动时验证网络保护和出口地区；保护条件不满足时拒绝进入环境。 | 选择一个 Windows 文件夹映射到虚拟桌面。文件保留在本机，虚拟桌面可直接编辑。 |
+| **中文输入与复制粘贴** | **关闭后继续运行** | **本地配置** |
+| 使用 fcitx5 / Rime 中文输入法，支持 Windows 与虚拟桌面之间的文本复制粘贴。 | 关闭窗口会收进系统托盘并保留会话；从托盘选择退出才会停止环境。 | Clash / Mihomo 配置在本机导入，选择出口节点后由虚拟环境使用。 |
 
-1. 确保 Windows 已启用并安装 WSL2。可参考 [Microsoft 的 WSL 安装指南](https://learn.microsoft.com/windows/wsl/install)。
-2. 从 [Releases](https://github.com/KeithMorning/ClaudeVM/releases) 下载 `ClaudeVM-Setup-2.1.0-x64.exe` 并安装。安装包目前未签名，Windows 可能提示未知发布者。
-3. 打开应用，在「设置 → 网络与安全」中选择 Clash / Mihomo 格式的 YAML 文件和一个出口节点。配置文件需要包含可用节点。
-4. 选择地区和共享工作区，点击「启动」。首次启动需要导入运行时；桌面出现后，可在其中打开浏览器或终端。
-5. 在「网络与安全」中运行连接检查，查看网络守卫、DNS 和出口状态。
+## 快速开始
 
-如果电脑还没有 WSL，可在应用中点击「安装 WSL2」，同意管理员授权，并按提示重启后重新检查。也可以在管理员 PowerShell 中运行 `wsl --install`。此命令要求 Windows 10 2004（内部版本 19041）及以上或 Windows 11；更旧版本请参阅 [Microsoft 手动安装说明](https://learn.microsoft.com/windows/wsl/install-manual)。Claude VM 使用自己的 WSL 发行版，首次启动时自动导入；没有可用的 WSL2 时，应用无法启动虚拟桌面。
+### 运行要求
 
-## 功能
+- Windows x64，已启用 WSL2
+- Node.js、Rust MSVC 工具链、C++ Build Tools 和 WebView2
+- Linux 运行时镜像 `rootfs.tar.gz`。镜像体积较大，不放在 Git 仓库中
 
-- **独立工作环境**：在串流桌面中使用 Chrome、Claude Code、终端和文件管理器。
-- **网络连接**：读取 Clash / Mihomo YAML 中的节点，由虚拟环境内的 mihomo 使用所选节点出网。应用生成单节点配置，不沿用原文件的分流规则。
-- **网络守卫**：运行时使用 TUN 和网络守卫限制直连；连接异常时可在状态栏和「网络与安全」查看状态。
-- **中文输入**：内置 fcitx5 + Rime 万象拼音，支持候选词和任务栏图标。
-- **地区与工作区**：可选择预设的时区、语言和共享目录；变更后按界面提示重启生效。
-
-## 网络与隐私边界
-
-网络检查会连接外部检测服务，并显示检查时的结果；**通过检查不等于不会泄露，也不保证 CheckCC 或其他第三方服务的评分**。浏览器行为、插件、账号、网络环境和服务端规则仍可能影响结果。请在使用前自行核对实际出口，连接或节点变化后重新检查。
-
-共享目录中的文件可被虚拟环境访问。导出的诊断包或完整检查报告可能包含环境和网络信息，分享前请检查其内容。
-
-## 从源码构建
-
-需要 Node.js、npm、Windows 构建环境，以及 `claude-desktop/runtime/rootfs.tar.gz`。运行时镜像不在 Git 仓库中；构建与导出方法见 [构建与打包](doc/engineering/01-构建与打包.md)。
+### 启动开发版
 
 ```powershell
-cd claude-desktop
+git clone https://github.com/KeithMorning/ClaudeVM.git
+cd ClaudeVM\claude-tauri
 npm install
-npm start            # 开发运行
-npm run dist:win     # 生成 Windows x64 安装包
 ```
 
-输出位于 `claude-desktop/dist/`。构建时会先同步虚拟环境脚本和界面资源。
+将 `rootfs.tar.gz` 放入 `claude-tauri\runtime\`，然后运行：
+
+```powershell
+npm run dev
+```
+
+应用首次启动会准备 WSL2 环境。进入设置后，选择 Mihomo / Clash YAML、出口节点和共享工作区，再启动虚拟桌面。
+
+运行时镜像没有随仓库提供；如果手头没有镜像，可按下方说明从源码构建。
+
+### 自行构建运行时镜像
+
+日常运行不需要 Docker。只有从源码构建 Linux 运行时镜像时，才需要在 Linux 或 WSL 环境中准备 Docker：
+
+```bash
+bash claude-vm/build-rootfs.sh
+```
+
+构建 Windows 安装包：
+
+```powershell
+cd claude-tauri
+npm run build
+```
+
+## 安全与数据边界
+
+- 网络守卫通过 TUN 管理虚拟环境的出站连接，并在启动时检查保护状态和出口地区。检查不通过时，环境不会被标记为就绪。
+- 出口地区检查依据 IP 地理信息和 Anthropic 公布的支持地区。它不能确认用户的实际所在地、账号资格，也不能保证账号不会受到平台限制。
+- 共享工作区会直接读写 Windows 上所选文件夹中的文件；请只共享你希望虚拟桌面访问的目录。
+- 网络检查会向外部 IP 信息服务发起请求。检查项目、实现依据和局限见[网络检查审计](docs/network-check-audit.md)。
+- 虚拟桌面与主机之间支持文本剪贴板；图片和文件请通过共享工作区传递。
+
+## 当前支持范围
+
+| 项目 | 状态 |
+| --- | --- |
+| Windows x64 桌面应用 | 开发预览 |
+| WSL2 Linux 虚拟桌面 | 支持，仍在验证不同 Windows 环境 |
+| 中文输入、双向文本剪贴板、共享文件夹 | 已实现 |
+| Mihomo / TUN 网络保护与启动出口检查 | 已实现，检查边界见上文 |
+| macOS / Linux 原生桌面应用 | 暂不支持 |
+| 正式签名安装包与自动更新 | 尚未提供 |
 
 ## 项目结构
 
 | 路径 | 内容 |
 | --- | --- |
-| [`claude-desktop/`](claude-desktop/) | Electron 应用、配置界面和打包脚本 |
-| [`claude-vm/`](claude-vm/) | Linux 运行时、桌面配置、输入法和网络守卫 |
-| [`doc/`](doc/index.md) | 架构、网络、安全边界及构建文档；部分历史文档可能已过时 |
-| [`tests/`](tests/README.md) | 单元、静态和 WSL 集成测试 |
-| [`build/`](build/) | 构建、验证和排障工具 |
+| [`claude-tauri/`](claude-tauri/) | Tauri 桌面程序、界面和运行时同步脚本 |
+| [`claude-vm/vm/`](claude-vm/vm/) | Linux 桌面、网络保护脚本和资源 |
+| [`tests/`](tests/) | 当前项目测试 |
+| [`docs/`](docs/) | 网络检查审计与问题记录 |
+| [`diagnostics/`](diagnostics/) | 只读网络诊断工具 |
 
-在仓库根目录运行快速测试：
+## 参与项目
 
-```powershell
-node --test "tests/unit/*.test.js" "tests/static/*.test.js"
-```
+Claude VM 仍在快速打磨中。遇到问题时，欢迎提交 [Issue](https://github.com/KeithMorning/ClaudeVM/issues)：请附上 Windows 版本、复现步骤和相关日志，并先移除配置文件中的节点地址、密码及其他个人信息。
 
 ## 许可
 
-[MIT](LICENSE)
+项目采用 [MIT License](LICENSE)。随附组件保留各自许可。

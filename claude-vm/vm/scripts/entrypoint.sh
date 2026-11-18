@@ -50,7 +50,7 @@ fi
 #    宿主切 Global 还是 Direct、甚至关掉，都与本环境的出口无关。
 #    必须在 net-guard 熔断**之前**启动：内核要在还有默认路由时解析节点域名、
 #    预置 GeoIP、补 /32 主机路由；默认路由一删，这些就都做不了了。
-#    实测结论见 build/TUN-SPIKE-结果.md（第四轮 tun-builtin-spike.sh 全绿）。
+#    路由和 TUN 状态以当前运行时检查结果为准。
 if [ -s /opt/config/clash.yaml ] && [ -x /opt/scripts/tun-core.sh ]; then
   /opt/scripts/tun-core.sh &
   TUN_CORE_PID=$!
@@ -251,6 +251,12 @@ cp -f /opt/config/lxterminal.conf ~/.config/lxterminal/lxterminal.conf
 
 # 3.1.1) 串流页面：用自带的极简版，去掉 noVNC 那个悬浮控制条
 #        优先用 /opt/assets（随客户端版本更新），没有才回退镜像内自带的旧副本
+# noVNC 1.7 supports the extended clipboard protocol (UTF-8); the Ubuntu
+# bundled version uses the legacy Latin-1 clipboard and corrupts Chinese.
+if [ -f /opt/assets/novnc/novnc-1.7.0.tgz ]; then
+  tar -xzf /opt/assets/novnc/novnc-1.7.0.tgz -C /usr/share/novnc --strip-components=1 \
+    package/core package/vendor 2>/dev/null || { echo '[claude-vm] noVNC 更新失败，已中止启动'; exit 1; }
+fi
 if [ -f /opt/assets/novnc/desktop.html ]; then
   cp -f /opt/assets/novnc/desktop.html /usr/share/novnc/desktop.html
 else
@@ -363,12 +369,34 @@ VENV_GEOMETRY="${NOVNC_GEOMETRY:-1600x900}"
 mkdir -p ~/.vnc
 pkill -x Xtigervnc 2>/dev/null || true
 pkill -f "websockify --web" 2>/dev/null || true
-sleep 1
+for _ in $(seq 1 10); do
+  pgrep -x Xtigervnc >/dev/null 2>&1 || break
+  sleep 0.1
+done
 rm -f /tmp/.X1-lock 2>/dev/null || true
 export DISPLAY=:1
 Xtigervnc :1 -geometry "$VENV_GEOMETRY" -depth 24 -rfbport 5901 -localhost \
   -SecurityTypes None -nolisten unix > ~/.vnc/Xtigervnc.log 2>&1 &
-sleep 2
+_vnc_pid=$!
+if command -v xdpyinfo >/dev/null 2>&1; then
+  _display_ready=0
+  for _ in $(seq 1 100); do
+    if xdpyinfo -display :1 >/dev/null 2>&1; then _display_ready=1; break; fi
+    kill -0 "$_vnc_pid" 2>/dev/null || break
+    sleep 0.1
+  done
+  if [ "$_display_ready" != 1 ]; then
+    echo "[claude-vm] 虚拟显示未就绪，请查看 ~/.vnc/Xtigervnc.log"
+    exit 1
+  fi
+else
+  sleep 2
+fi
+
+# TigerVNC uses vncconfig to exchange the X clipboard with connected clients.
+if command -v vncconfig >/dev/null 2>&1; then
+  vncconfig -nowin >/tmp/claude-vm-vncconfig.log 2>&1 &
+fi
 
 # 5) 桌面：壁纸 → 窗口管理器 → 面板
 node /opt/scripts/fix-chrome-prefs.js >/dev/null 2>&1 || true

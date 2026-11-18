@@ -1,0 +1,638 @@
+'use strict';
+
+const $ = (id) => document.getElementById(id);
+const invoke = (name, args) => window.__TAURI__.core.invoke(name, args);
+let config = { yaml_path: '', node: '', workspace: '', region: 'tw-taipei' };
+let checkGeneration = 0;
+let sessionStarted = false;
+let autoStartDone = false;
+let stoppedByUser = false;
+let statusGeneration = 0;
+let nodeConfigIssue = '';
+const configComplete = () => Boolean(!nodeConfigIssue && config.yaml_path && config.node && config.workspace);
+let runtimeInFlight = false;
+let lastGuardState = '';
+const clipboardChannel = 'claude-vm-clipboard';
+const desktopOrigin = 'http://127.0.0.1:6080';
+let clipboardConnected = false;
+let clipboardBusy = false;
+let clipboardLastHost = null;
+let clipboardLastGuest = null;
+let clipboardPending = null;
+let clipboardGuestPending = null;
+let clipboardSequence = 0;
+let clipboardObservedHost;
+const normalizeClipboardText = (text) => text.replace(/\r\n/g, '\n');
+
+function resetClipboard() {
+  clipboardConnected = false;
+  clipboardLastHost = null;
+  clipboardLastGuest = null;
+  clipboardPending = null;
+  clipboardGuestPending = null;
+  clipboardObservedHost = undefined;
+  clipboardSequence++;
+}
+function sendDesktop(message) {
+  $('desktopFrame').contentWindow?.postMessage({ channel: clipboardChannel, ...message }, desktopOrigin);
+}
+$('desktopFrame').addEventListener('load', () => {
+  if (sessionStarted) sendDesktop({ type: 'hello' });
+});
+window.addEventListener('message', (event) => {
+  if (!sessionStarted || event.origin !== desktopOrigin || event.source !== $('desktopFrame').contentWindow || event.data?.channel !== clipboardChannel) return;
+  const message = event.data;
+  if (message.type === 'ready') {
+    clipboardConnected = message.connected === true;
+    clipboardPending = null;
+    if (clipboardConnected) clipboardLastHost = null;
+  } else if (message.type === 'ack' && clipboardPending && message.id === clipboardPending.id) {
+    if (message.sent) { clipboardLastHost = clipboardPending.normalized; clipboardLastGuest = clipboardPending.normalized; }
+    clipboardPending = null;
+  } else if (message.type === 'guest-text' && typeof message.text === 'string') {
+    const normalized = normalizeClipboardText(message.text);
+    if (normalized === clipboardLastGuest || (clipboardPending && normalized === clipboardPending.normalized)) return;
+    clipboardSequence++;
+    clipboardPending = null;
+    clipboardGuestPending = message.text;
+  }
+});
+async function syncClipboard() {
+  if (!sessionStarted || !clipboardConnected || clipboardBusy) return;
+  clipboardBusy = true;
+  const sequence = clipboardSequence;
+  try {
+    let text = await invoke('clipboard_read_text');
+    if (sequence !== clipboardSequence || !sessionStarted || !clipboardConnected) return;
+    const snapshot = typeof text === 'string' ? `text:${normalizeClipboardText(text)}` : 'non-text';
+    if (clipboardGuestPending !== null) {
+      const guest = clipboardGuestPending;
+      if (clipboardObservedHost !== undefined && clipboardObservedHost !== snapshot) {
+        clipboardGuestPending = null; // 宿主已有较新的内容，不能用旧的客机事件覆盖。
+      } else {
+        await invoke('clipboard_write_text', { text: guest });
+        if (sequence !== clipboardSequence || !sessionStarted) return;
+        clipboardGuestPending = null;
+        clipboardLastGuest = normalizeClipboardText(guest);
+        clipboardLastHost = normalizeClipboardText(guest);
+        text = guest;
+      }
+    }
+    clipboardObservedHost = typeof text === 'string' ? `text:${normalizeClipboardText(text)}` : 'non-text';
+    if (typeof text !== 'string') {
+      clipboardLastHost = null;
+      clipboardLastGuest = null;
+      clipboardPending = null;
+      return;
+    }
+    const normalized = normalizeClipboardText(text);
+    if (normalized === clipboardLastHost) return;
+    if (clipboardPending && Date.now() - clipboardPending.at < 1200) return;
+    const id = ++clipboardSequence;
+    clipboardPending = { id, text, normalized, at: Date.now() };
+    sendDesktop({ type: 'host-text', id, text });
+  } catch (_) { /* retry on the next tick without changing the remembered value */ }
+  finally { clipboardBusy = false; }
+}
+setInterval(syncClipboard, 400);
+setInterval(() => { if (sessionStarted && !clipboardConnected) sendDesktop({ type: 'hello' }); }, 1200);
+function invalidateCheck() {
+  checkGeneration++;
+  $('checkResults').replaceChildren();
+  if (!$('checkPopover').hidden) $('checkMessage').textContent = '配置已变化，请重新检查实际连接。';
+}
+
+function switchPage(page) {
+  document.querySelectorAll('[data-page]').forEach((el) => el.classList.toggle('active', el.dataset.page === page));
+  document.querySelectorAll('[data-view]').forEach((el) => { el.hidden = el.dataset.view !== page; });
+  $('pageTitle').textContent = ({ home: '虚拟桌面', network: '网络设置', files: '工作区' })[page] || 'Claude VM';
+}
+document.querySelectorAll('[data-page]').forEach((el) => el.addEventListener('click', () => switchPage(el.dataset.page)));
+
+function createSelect(select) {
+  const wrapper = document.createElement('div'); wrapper.className = 'select-wrap';
+  const button = document.createElement('button'); button.type = 'button'; button.className = 'select-trigger';
+  button.setAttribute('role', 'combobox');
+  button.setAttribute('aria-haspopup', 'listbox'); button.setAttribute('aria-expanded', 'false');
+  button.setAttribute('aria-labelledby', `${select.id}Label ${select.id}Value`);
+  const value = document.createElement('span'); value.id = `${select.id}Value`; value.className = 'select-value';
+  const arrow = document.createElement('span'); arrow.className = 'select-chevron'; arrow.setAttribute('aria-hidden', 'true');
+  button.append(value, arrow);
+  const list = document.createElement('div'); list.className = 'select-list'; list.id = `${select.id}Options`;
+  list.setAttribute('role', 'listbox'); list.setAttribute('aria-labelledby', `${select.id}Label`); list.hidden = true;
+  button.setAttribute('aria-controls', list.id);
+  const label = document.querySelector(`label[for="${select.id}"]`);
+  if (label) { label.id = `${select.id}Label`; label.addEventListener('click', (event) => { event.preventDefault(); button.focus(); }); }
+  select.before(wrapper); wrapper.append(select, button, list); select.hidden = true;
+  let active = 0;
+  function close() { list.hidden = true; button.setAttribute('aria-expanded', 'false'); button.removeAttribute('aria-activedescendant'); }
+  function sync() {
+    const options = Array.from(select.options);
+    const selectedName = select.selectedOptions[0]?.textContent || (select.id === 'nodeSelect' ? '请选择出口节点' : '请选择');
+    value.textContent = selectedName;
+    button.disabled = select.disabled || options.length === 0;
+    active = Math.max(0, select.selectedIndex);
+    list.replaceChildren();
+    options.forEach((option, index) => {
+      const row = document.createElement('div'); row.className = 'select-option'; row.id = `${select.id}Option${index}`;
+      row.setAttribute('role', 'option'); row.setAttribute('aria-selected', String(option.selected));
+      const lat = select.id === 'nodeSelect' ? nodeLatency.get(option.value) : undefined;
+      const name = document.createElement('span'); name.className = 'select-option-name'; name.textContent = option.textContent;
+      row.append(name);
+      if (lat) {
+        const badge = document.createElement('b');
+        badge.className = 'select-latency' + (lat.ms == null || lat.ms > 300 ? ' slow' : '');
+        badge.textContent = lat.error || `${lat.ms} ms`;
+        row.append(badge);
+      }
+      row.addEventListener('click', () => { choose(index); close(); button.focus(); });
+      list.append(row);
+    });
+    const selectedLatency = select.id === 'nodeSelect' ? nodeLatency.get(select.value) : undefined;
+    const existing = button.querySelector('.select-latency');
+    if (selectedLatency) {
+      const badge = existing || document.createElement('b');
+      badge.className = 'select-latency' + (selectedLatency.ms == null || selectedLatency.ms > 300 ? ' slow' : '');
+      badge.textContent = selectedLatency.error || `${selectedLatency.ms} ms`;
+      if (!existing) button.insertBefore(badge, arrow);
+    } else if (existing) {
+      existing.remove();
+    }
+  }
+  function highlight() {
+    Array.from(list.children).forEach((row, index) => row.classList.toggle('highlight', index === active));
+    const row = list.children[active];
+    if (row) { button.setAttribute('aria-activedescendant', row.id); row.scrollIntoView({ block: 'nearest' }); }
+  }
+  function choose(index) {
+    if (!select.options[index] || select.options[index].disabled) return;
+    const changed = select.selectedIndex !== index;
+    select.selectedIndex = index; sync();
+    if (changed) select.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+  function open() {
+    if (button.disabled) return;
+    document.querySelectorAll('.select-wrap').forEach((other) => { if (other !== wrapper) other.dispatchEvent(new Event('close-select')); });
+    const rect = button.getBoundingClientRect();
+    const view = wrapper.closest('.settings-view')?.getBoundingClientRect();
+    wrapper.classList.toggle('opens-up', (view?.bottom ?? window.innerHeight) - rect.bottom < 210 && rect.top - (view?.top ?? 0) > 210);
+    list.hidden = false; button.setAttribute('aria-expanded', 'true'); highlight();
+  }
+  wrapper.addEventListener('close-select', close);
+  button.addEventListener('click', () => { if (list.hidden) open(); else close(); });
+  button.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') { close(); return; }
+    if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
+      event.preventDefault();
+      if (list.hidden) open();
+      else { active = event.key === 'Home' ? 0 : event.key === 'End' ? select.options.length - 1 : Math.max(0, Math.min(select.options.length - 1, active + (event.key === 'ArrowDown' ? 1 : -1))); highlight(); }
+    } else if ((event.key === 'Enter' || event.key === ' ') && !list.hidden) {
+      event.preventDefault(); choose(active); close();
+    } else if (event.key === 'Tab') close();
+  });
+  document.addEventListener('pointerdown', (event) => { if (!wrapper.contains(event.target)) close(); });
+  select.addEventListener('change', sync);
+  sync();
+  return { sync };
+}
+const nodeLatency = new Map();
+const selects = { nodeSelect: createSelect($('nodeSelect')), region: createSelect($('region')) };
+
+async function showNodes(path, selected = '') {
+  const select = $('nodeSelect');
+  const names = await invoke('inspect_config', { path });
+  nodeLatency.clear();
+  select.replaceChildren();
+  names.forEach((name) => { const option = document.createElement('option'); option.value = name; option.textContent = name; select.append(option); });
+  select.value = names.includes(selected) ? selected : (names[0] || '');
+  selects.nodeSelect.sync();
+  $('testLatency').disabled = names.length === 0;
+  return select.value;
+}
+
+const latencyText = (ms) => ms == null ? '—' : `${ms} ms`;
+let latencyGeneration = 0;
+async function probeLatencies() {
+  const path = $('yamlPath').value;
+  if (!path) return;
+  const generation = ++latencyGeneration;
+  const button = $('testLatency');
+  button.disabled = true;
+  button.textContent = '测速中…';
+  $('latencyResult').textContent = '正在测速…';
+  try {
+    const nodes = await invoke('node_latency', { path });
+    if (generation !== latencyGeneration) return;
+    nodeLatency.clear();
+    nodes.forEach((node) => nodeLatency.set(node.name, node));
+    selects.nodeSelect.sync();
+    const best = nodes.filter((node) => node.ms != null).sort((a, b) => a.ms - b.ms)[0];
+    $('latencyResult').textContent = best ? `最快：${best.name} · ${best.ms} ms` : '没有可测速的节点。';
+  } catch (error) {
+    if (generation === latencyGeneration) $('latencyResult').textContent = String(error);
+  } finally {
+    if (generation === latencyGeneration) { button.disabled = $('nodeSelect').options.length === 0; button.textContent = '延迟测速'; }
+  }
+}
+
+function updateLiveLatency(ms, name) {
+  const el = $('liveLatency');
+  el.textContent = ms == null ? '延迟 --' : `${ms} ms`;
+  el.title = ms == null ? '节点连接延迟暂不可用' : `节点 ${name || '出口'}的 TCP 连接延迟`;
+  el.classList.toggle('slow', ms != null && ms > 300);
+  el.hidden = !sessionStarted;
+}
+
+let liveLatencyBusy = false;
+async function pollLiveLatency() {
+  if (liveLatencyBusy || !config.yaml_path || !config.node) return;
+  liveLatencyBusy = true;
+  try {
+    const ms = await invoke('node_latency', { path: config.yaml_path, node: config.node });
+    const value = Array.isArray(ms) ? ms.find((item) => item.name === config.node)?.ms ?? null : null;
+    updateLiveLatency(value, config.node);
+  } catch (_) { updateLiveLatency(null); }
+  finally { liveLatencyBusy = false; }
+}
+setInterval(pollLiveLatency, 8000);
+
+async function save(message, nextConfig = config) {
+  try {
+    await invoke('save_config', { config: nextConfig });
+    config = nextConfig;
+    if (message === 'networkMessage') {
+      const repairingNode = Boolean(nodeConfigIssue);
+      nodeConfigIssue = '';
+      if (repairingNode && !sessionStarted) {
+        autoStartDone = false;
+        switchPage('home');
+      }
+    }
+    $(message).textContent = '设置已保存。';
+    if (!sessionStarted) void refreshStatus();
+  }
+  catch (error) { $(message).textContent = String(error); }
+}
+
+$('chooseYaml').addEventListener('click', async () => {
+  try {
+    const path = await invoke('choose_config');
+    if (!path) return;
+    await showNodes(path, path === config.yaml_path ? config.node : '');
+    invalidateCheck();
+    $('yamlPath').value = path;
+    $('networkMessage').textContent = '已选择第一个节点，可更换节点后保存设置。';
+  } catch (error) { $('networkMessage').textContent = String(error); }
+});
+$('nodeSelect').addEventListener('change', invalidateCheck);
+$('testLatency').addEventListener('click', () => { void probeLatencies(); });
+$('saveNetwork').addEventListener('click', () => {
+  const yaml_path = $('yamlPath').value;
+  const node = $('nodeSelect').value;
+  if (!yaml_path || !node) {
+    $('networkMessage').textContent = '请选择配置文件和出口节点，再保存设置。';
+    return;
+  }
+  void save('networkMessage', { ...config, yaml_path, node });
+});
+$('chooseWorkspace').addEventListener('click', async () => {
+  try { const path = await invoke('choose_workspace'); if (path) { config.workspace = path; $('workspacePath').value = path; } }
+  catch (error) { $('workspaceMessage').textContent = String(error); }
+});
+$('region').addEventListener('change', invalidateCheck);
+$('saveWorkspace').addEventListener('click', () => { config.region = $('region').value; save('workspaceMessage'); });
+function toggleCheckPopover(show) {
+  const popover = $('checkPopover');
+  const next = show ?? popover.hidden;
+  if (next === !popover.hidden) return;
+  popover.hidden = !next;
+  $('backgroundCheck').setAttribute('aria-expanded', String(next));
+  if (next) $('checkPopoverClose').focus();
+}
+$('backgroundCheck').setAttribute('aria-expanded', 'false');
+$('backgroundCheck').setAttribute('aria-controls', 'checkPopover');
+$('backgroundCheck').addEventListener('click', () => toggleCheckPopover());
+$('checkPopoverClose').addEventListener('click', () => { toggleCheckPopover(false); $('backgroundCheck').focus(); });
+document.addEventListener('pointerdown', (event) => {
+  const popover = $('checkPopover');
+  if (!popover.hidden && !popover.contains(event.target) && event.target !== $('backgroundCheck') && !$('backgroundCheck').contains(event.target)) toggleCheckPopover(false);
+});
+document.addEventListener('keydown', (event) => {
+  if (event.key !== 'Escape' || $('checkPopover').hidden) return;
+  toggleCheckPopover(false);
+  $('backgroundCheck').focus();
+});
+
+async function runNetworkCheck() {
+  const generation = checkGeneration;
+  const button = $('checkNetwork');
+  if (button.disabled) return;
+  button.disabled = true;
+  $('stopRuntime').disabled = true;
+  $('stopRuntime').title = '环境检查完成后可以停止';
+  const badge = $('backgroundCheck');
+  badge.hidden = false;
+  badge.classList.remove('done', 'attention');
+  $('backgroundCheckLabel').textContent = '网络检查中';
+  $('checkResults').replaceChildren();
+  $('checkMessage').textContent = '正在检查当前连接…';
+  try {
+    const groups = await invoke('check_network');
+    if (generation !== checkGeneration) return;
+    let count = 0;
+    groups.forEach((group) => (group.items || []).forEach((item) => {
+      const row = document.createElement('div');
+      row.className = 'check-result';
+      const mark = document.createElement('span'); mark.className = 'check-mark ' + (item.status || 'info');
+      mark.textContent = ({ pass: '✓', warn: '!', fail: '×', info: 'i' })[item.status] || '·';
+      const body = document.createElement('div');
+      const title = document.createElement('strong'); title.textContent = item.label || '';
+      const value = document.createElement('p'); value.textContent = item.value || '';
+      body.append(title, value);
+      if (item.detail || item.advice) { const detail = document.createElement('p'); detail.textContent = [item.detail, item.advice].filter(Boolean).join(' '); body.append(detail); }
+      row.append(mark, body); $('checkResults').append(row); count++;
+    }));
+    const warnings = groups.flatMap((group) => group.items || []).filter((item) => item.status === 'warn' || item.status === 'fail').length;
+    $('checkMessage').textContent = count ? `已完成 ${count} 项检查；连接变化后请重新检查。` : '没有获取到检查结果。';
+    badge.classList.add('done');
+    badge.classList.toggle('attention', !count || warnings > 0);
+    $('backgroundCheckLabel').textContent = !count ? '检查未完成' : warnings ? `网络检查 · ${warnings} 项需关注` : '网络检查已完成';
+  } catch (error) {
+    if (generation === checkGeneration) {
+      $('checkMessage').textContent = String(error);
+      badge.classList.add('done', 'attention');
+      $('backgroundCheckLabel').textContent = '网络检查未完成';
+    }
+  }
+  finally {
+    button.disabled = false;
+    $('stopRuntime').disabled = false;
+    $('stopRuntime').title = '';
+  }
+}
+$('checkNetwork').addEventListener('click', runNetworkCheck);
+
+async function loadConfig() {
+  try {
+    config = await invoke('load_config');
+    $('yamlPath').value = config.yaml_path;
+    $('workspacePath').value = config.workspace;
+    $('region').value = config.region || 'tw-taipei';
+    selects.region.sync();
+    if (config.yaml_path) {
+      const selected = await showNodes(config.yaml_path, config.node);
+      if (!selected) {
+        throw new Error('配置文件中没有可用节点。');
+      } else {
+        if (selected !== config.node) {
+          const nextConfig = { ...config, node: selected };
+          await invoke('save_config', { config: nextConfig });
+          config = nextConfig;
+          $('networkMessage').textContent = '原节点不可用，已选择并保存列表中的第一个节点。';
+        }
+        void probeLatencies();
+      }
+    }
+    void pollLiveLatency();
+  } catch (error) {
+    nodeConfigIssue = String(error);
+    $('networkMessage').textContent = nodeConfigIssue;
+  }
+}
+
+async function connectDesktop() {
+  sessionStarted = true;
+  resetClipboard();
+  if ($('desktopFrame').getAttribute('src') !== 'http://127.0.0.1:6080/desktop.html?autoconnect=1') {
+    $('desktopFrame').src = 'http://127.0.0.1:6080/desktop.html?autoconnect=1';
+  }
+  $('desktopFrame').hidden = false;
+  $('stageContent').hidden = true;
+  $('startupOverlay').hidden = true;
+  $('stopRuntime').hidden = false;
+  $('desktopStatus').textContent = '虚拟桌面已启动 · 守卫已确认';
+  $('guardIndicator').title = '网络保护已开启';
+  $('topStatus').textContent = '运行中';
+  void pollLiveLatency();
+  invalidateCheck();
+  await refreshGuard();
+  if (lastGuardState === 'guarded') void runNetworkCheck();
+}
+
+async function startSession() {
+  if (runtimeInFlight) return;
+  autoStartDone = true;
+  runtimeInFlight = true;
+  $('startRuntime').disabled = true;
+  $('stageTitle').textContent = '正在启动虚拟环境';
+  $('stageDescription').textContent = '正在同步运行时并验证网络守卫，首次启动可能需要几分钟。';
+  $('installNote').textContent = '请保持应用打开。';
+  $('startupOverlay').hidden = false;
+  $('startupTitle').textContent = '正在准备工作空间';
+  $('startupDetail').textContent = '正在启动虚拟桌面';
+  let unlisten = () => {};
+  try {
+    unlisten = await window.__TAURI__.event.listen('startup-progress', ({ payload }) => {
+      if (payload === 'desktop-starting') $('startupDetail').textContent = '正在打开虚拟桌面';
+      if (payload === 'desktop-ready') {
+        $('desktopFrame').src = 'http://127.0.0.1:6080/desktop.html?autoconnect=1';
+        $('desktopFrame').hidden = false;
+        $('stageContent').hidden = true;
+        $('startupTitle').textContent = '桌面已准备好';
+        $('startupDetail').textContent = '正在确认网络保护，完成后即可操作';
+      }
+    });
+    const outcome = await invoke('start_runtime');
+    if (!outcome.ok) {
+      $('stopRuntime').hidden = !outcome.needs_stop;
+      throw new Error(outcome.error || '启动未完成。');
+    }
+    await connectDesktop();
+  } catch (error) {
+    $('startupOverlay').hidden = true;
+    $('desktopFrame').hidden = true;
+    $('desktopFrame').src = 'about:blank';
+    $('stageContent').hidden = false;
+    $('stageTitle').textContent = '无法完成启动';
+    $('stageDescription').textContent = String(error);
+    $('installNote').textContent = $('stopRuntime').hidden ? '请检查配置后重试。' : '环境已部分启动，可尝试停止环境后重试。';
+    $('startRuntime').disabled = false;
+  } finally {
+    unlisten();
+    runtimeInFlight = false;
+  }
+}
+
+function triggerAutoStart(status, manual) {
+  if (stoppedByUser || autoStartDone || sessionStarted || runtimeInFlight) return;
+  if (!status || !status.wsl_available || !status.runtime_resources_available) return;
+  if ((!status.distro_registered && !manual) || !configComplete()) return;
+  return startSession();
+}
+
+async function refreshStatus(manual = false) {
+  if (runtimeInFlight || $('refresh').disabled) return;
+  const button = $('refresh');
+  button.disabled = true;
+  const generation = statusGeneration;
+  try {
+    const status = await invoke('runtime_status');
+    if (generation !== statusGeneration || runtimeInFlight) return;
+    $('topDot').classList.toggle('available', status.wsl_available);
+    if (!sessionStarted) $('topStatus').textContent = status.wsl_available ? 'WSL 可用' : 'WSL 未就绪';
+    $('installWsl').hidden = status.wsl_available;
+    const canRestore = !stoppedByUser && status.session_running && status.desktop_available;
+    const canStart = status.wsl_available && status.runtime_resources_available && configComplete();
+    const needsNode = !canRestore && Boolean(nodeConfigIssue);
+    const startButton = $('startRuntime');
+    startButton.dataset.action = needsNode ? 'network-settings' : 'start';
+    startButton.textContent = needsNode ? '前往网络设置 ↗' : '启动虚拟环境 ↗';
+    startButton.disabled = sessionStarted || (!canRestore && !canStart && !needsNode);
+    if (!sessionStarted && !runtimeInFlight) $('stopRuntime').hidden = stoppedByUser || !status.session_running;
+    $('stageTitle').textContent = stoppedByUser ? '环境已停止' : !status.wsl_available ? '需要先启用 WSL2' : status.distro_registered ? '检测到已有虚拟环境' : '准备你的工作空间';
+    $('stageDescription').textContent = canRestore ? '正在检查已有会话的网络保护，确认后将直接进入。'
+      : !status.wsl_available ? 'Windows 家庭版也支持，安装需要管理员授权，可能需要重启。'
+      : needsNode ? nodeConfigIssue
+      : !status.runtime_resources_available ? '未找到完整的运行时资源，请检查应用目录或使用 npm run dev 启动。'
+      : !configComplete() ? '请先完成网络与工作区设置。'
+      : '点击启动进入虚拟桌面。';
+    if (!sessionStarted) $('installNote').textContent = '';
+    if (!sessionStarted) $('desktopStatus').textContent = status.desktop_available ? '本地桌面端口已占用 · 未验证' : '未连接';
+    $('runtimeDetail').textContent = !status.wsl_available ? 'WSL 未就绪，请检查 Windows 功能。'
+      : !status.runtime_resources_available ? '运行时资源不完整。'
+      : status.distro_registered ? 'WSL 可用，已发现 claude-vm。' : 'WSL 可用，运行时资源已就绪。';
+    if (status.session_running && status.desktop_available && !stoppedByUser && !sessionStarted && !runtimeInFlight) {
+      runtimeInFlight = true;
+      $('startRuntime').disabled = true;
+      $('stageTitle').textContent = '正在恢复已有会话';
+      $('startupTitle').textContent = '正在恢复工作空间';
+      $('startupDetail').textContent = '正在确认已有会话的网络保护';
+      $('startupOverlay').hidden = false;
+      try {
+        await invoke('restore_session');
+        await connectDesktop();
+      } catch (error) {
+        $('startupOverlay').hidden = true;
+        let latest = null;
+        try { latest = await invoke('runtime_status'); } catch (_) { /* keep the explicit recovery error */ }
+        if (latest && !latest.session_running) {
+          $('stageTitle').textContent = '环境已停止';
+          $('stageDescription').textContent = '之前的会话已经结束，可以直接重新启动。';
+          $('installNote').textContent = configComplete() ? '点击启动即可重新进入。' : '请确认网络与工作区设置。';
+          $('startRuntime').disabled = !latest.wsl_available || !latest.runtime_resources_available || !configComplete();
+          $('stopRuntime').hidden = true;
+          $('desktopStatus').textContent = '未连接';
+        } else {
+          $('stageTitle').textContent = '已有会话无法恢复';
+          $('stageDescription').textContent = String(error);
+          $('installNote').textContent = '会话仍在运行，可检查网络后点击启动重试。';
+          $('startRuntime').disabled = false;
+          $('stopRuntime').hidden = false;
+        }
+      } finally { runtimeInFlight = false; }
+      return;
+    }
+    if (manual) autoStartDone = false;
+    await triggerAutoStart(status, manual);
+  } catch (_) {
+    if (generation !== statusGeneration) return;
+    $('topStatus').textContent = '检查失败';
+    $('stageTitle').textContent = '无法检查运行环境';
+    $('stageDescription').textContent = '请确认应用正在 Tauri 中运行。';
+    $('desktopStatus').textContent = '状态未知';
+    $('runtimeDetail').textContent = '无法读取 WSL 状态。';
+  } finally { button.disabled = false; }
+}
+
+$('refresh').addEventListener('click', () => { void refreshStatus(); });
+$('startRuntime').addEventListener('click', () => {
+  if ($('startRuntime').dataset.action === 'network-settings') {
+    switchPage('network');
+    return;
+  }
+  stoppedByUser = false;
+  void refreshStatus(true);
+});
+$('stopRuntime').addEventListener('click', async () => {
+  if (runtimeInFlight) return;
+  statusGeneration++;
+  stoppedByUser = true;
+  runtimeInFlight = true;
+  const button = $('stopRuntime'); button.disabled = true;
+  try {
+    await invoke('stop_runtime');
+    sessionStarted = false;
+    autoStartDone = true;
+    resetClipboard();
+    lastGuardState = '';
+    $('guardIndicator').className = '';
+    $('desktopFrame').hidden = true; $('desktopFrame').src = 'about:blank';
+    $('liveLatency').hidden = true;
+    $('desktopStatus').textContent = '环境已停止';
+    $('guardIndicator').title = '环境已停止';
+    $('stageContent').hidden = false;
+    $('stageTitle').textContent = '环境已停止';
+    $('stageDescription').textContent = '点击启动进入虚拟桌面。';
+    $('installNote').textContent = '';
+    $('startRuntime').disabled = false;
+    $('startRuntime').dataset.action = 'start';
+    button.hidden = true;
+    $('backgroundCheck').hidden = true;
+    invalidateCheck();
+    runtimeInFlight = false;
+    await refreshStatus();
+  } catch (error) {
+    stoppedByUser = false;
+    $('desktopStatus').textContent = '停止失败：' + String(error);
+    $('stageDescription').textContent = '停止失败：' + String(error);
+  }
+  finally { button.disabled = false; runtimeInFlight = false; }
+});
+function syncPowerButton() {
+  const power = $('powerRuntime');
+  const stop = $('stopRuntime');
+  const running = !stop.hidden;
+  const label = running ? '停止环境' : $('startRuntime').dataset.action === 'network-settings' ? '前往网络设置' : '启动环境';
+  power.setAttribute('aria-label', label);
+  power.title = label;
+  power.classList.toggle('running', running);
+  power.disabled = running ? stop.disabled : $('startRuntime').disabled;
+}
+new MutationObserver(syncPowerButton).observe($('stopRuntime'), { attributes: true, attributeFilter: ['hidden', 'disabled'] });
+new MutationObserver(syncPowerButton).observe($('startRuntime'), { attributes: true, attributeFilter: ['disabled', 'data-action'] });
+$('powerRuntime').addEventListener('click', () => {
+  if (!$('stopRuntime').hidden) $('stopRuntime').click();
+  else $('startRuntime').click();
+});
+syncPowerButton();
+async function refreshGuard() {
+  if (!sessionStarted) return;
+  let state = 'unknown';
+  try { state = await invoke('guard_status'); } catch (_) { /* show unknown below */ }
+  if (!sessionStarted) return;
+  if (lastGuardState && state !== lastGuardState) invalidateCheck();
+  lastGuardState = state;
+  const labels = { guarded: '网络保护已开启', blocked: '网络保护未通过检查', proxy_down: '节点连接已断开', off: '网络保护已关闭', unknown: '网络保护状态待确认' };
+  $('desktopStatus').textContent = labels[state] || labels.unknown;
+  $('guardIndicator').title = labels[state] || labels.unknown;
+  $('guardIndicator').className = state === 'guarded' ? 'guard-ok' : state === 'unknown' ? '' : 'guard-warning';
+  $('topStatus').textContent = state === 'guarded' ? '运行中' : '网络需要注意';
+  $('topDot').classList.toggle('available', state === 'guarded');
+}
+setInterval(refreshGuard, 6000);
+window.__TAURI__.event.listen('exit-pending', () => {
+  $('desktopStatus').textContent = '正在等待当前操作完成并停止环境…';
+  $('topStatus').textContent = '正在退出';
+}).catch(() => {});
+window.__TAURI__.event.listen('exit-failed', ({ payload }) => {
+  $('desktopStatus').textContent = '退出失败：' + String(payload);
+  $('topStatus').textContent = '退出未完成';
+}).catch(() => {});
+$('installWsl').addEventListener('click', async () => {
+  const button = $('installWsl'); button.disabled = true;
+  $('installNote').textContent = '正在安装，请在 Windows 提示时允许管理员授权。';
+  try { await invoke('install_wsl'); $('installNote').textContent = '安装命令已完成，请按系统提示重启电脑并重新检查。'; }
+  catch (error) { $('installNote').textContent = String(error); }
+  finally { button.disabled = false; }
+});
+void loadConfig().then(() => refreshStatus());

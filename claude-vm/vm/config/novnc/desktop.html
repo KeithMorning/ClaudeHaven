@@ -48,6 +48,8 @@ const password = params.get('password') || '';
 const url = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${host}${port ? ':' + port : ''}/${path}`;
 
 let rfb = null;
+let connected = false;
+let bridgeOrigin = null;
 let pendingOut = '';
 let retry = 0;
 
@@ -57,10 +59,31 @@ let retry = 0;
      __clipTaken()    虚拟机里复制了东西 -> 取走（取一次清一次，防回环）
      __rfbState()     排查用，返回真实连接状态字符串 */
 window.__clipSet = (t) => {
-  try { if (rfb && rfb.clipboardPasteFrom) rfb.clipboardPasteFrom(String(t ?? '')); } catch (e) {}
+  try {
+    if (!rfb || !connected || !rfb.clipboardPasteFrom) return false;
+    rfb.clipboardPasteFrom(String(t ?? ''));
+    return true;
+  } catch (e) { return false; }
 };
 window.__clipTaken = () => { const t = pendingOut; pendingOut = ''; return t; };
-window.__rfbState = () => (rfb ? (rfb._rfb_connection_state || 'unknown') : 'none');
+window.__rfbState = () => (connected ? 'connected' : 'disconnected');
+
+// The Tauri shell is cross-origin. Accept messages only from its local app
+// origin and only reply to the parent that completed the handshake.
+const bridgeOrigins = new Set(['http://tauri.localhost', 'https://tauri.localhost', 'tauri://localhost']);
+function bridgePost(message) {
+  if (bridgeOrigin && window.parent !== window) window.parent.postMessage(message, bridgeOrigin);
+}
+window.addEventListener('message', (event) => {
+  if (event.source !== window.parent || !bridgeOrigins.has(event.origin) || !event.data || event.data.channel !== 'claude-vm-clipboard') return;
+  if (event.data.type === 'hello') {
+    bridgeOrigin = event.origin;
+    bridgePost({ channel: 'claude-vm-clipboard', type: 'ready', connected });
+  } else if (event.origin === bridgeOrigin && event.data.type === 'host-text' && typeof event.data.text === 'string') {
+    const sent = window.__clipSet(event.data.text);
+    bridgePost({ channel: 'claude-vm-clipboard', type: 'ack', id: event.data.id, sent });
+  }
+});
 
 const focusStage = () => { const c = stage.querySelector('canvas'); if (c) c.focus(); };
 
@@ -101,11 +124,15 @@ function connect() {
   try { rfb.compressionLevel = 1; } catch (e) {}
 
   rfb.addEventListener('connect', () => {
+    connected = true;
+    bridgePost({ channel: 'claude-vm-clipboard', type: 'ready', connected: true });
     retry = 0;
     hint.classList.add('gone');
     focusStage();               // 连上就把键盘焦点交给虚拟机，特殊键直接生效
   });
   rfb.addEventListener('disconnect', (e) => {
+    connected = false;
+    bridgePost({ channel: 'claude-vm-clipboard', type: 'ready', connected: false });
     const why = (e && e.detail && e.detail.clean) ? 'session closed' : 'connection lost';
     say('Desktop disconnected (' + why + ') — reconnecting…');
     setTimeout(connect, Math.min(600 * ++retry, 4000));
@@ -113,6 +140,7 @@ function connect() {
   rfb.addEventListener('clipboard', (e) => {
     // 虚拟机里按 Ctrl+C / 选区复制 -> 暂存，等宿主来取
     pendingOut = e.detail.text || '';
+    if (typeof e.detail.text === 'string') bridgePost({ channel: 'claude-vm-clipboard', type: 'guest-text', text: e.detail.text });
   });
 }
 

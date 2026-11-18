@@ -385,10 +385,13 @@ def cmd_unlock():
                 errs.append('v6: ' + e)
     if not saved.get('ipv6_disabled_before', False):
         set_ipv6_disabled(False)
-    try:
-        os.remove(ORIG_FILE)
-    except OSError:
-        pass
+    # Keep the recovery information if restoring any route failed, so a
+    # subsequent attempt can retry instead of permanently losing it.
+    if not errs:
+        try:
+            os.remove(ORIG_FILE)
+        except OSError:
+            pass
     return dict(ok=not errs, error='; '.join(errs) or None, **cmd_status())
 
 

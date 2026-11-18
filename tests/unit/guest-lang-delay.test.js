@@ -6,7 +6,7 @@ const { test } = require('node:test');
 const assert = require('node:assert');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
-const { ROOT } = require('../loader');
+const ROOT = path.resolve(__dirname, '../..');
 
 function findPython() {
   for (const c of ['python3', 'python']) {

@@ -1,0 +1,14 @@
+{
+  "name": "claude-vm-tauri",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "sync-runtime": "node scripts/sync-runtime.js",
+    "dev": "npm run sync-runtime && tauri dev",
+    "build": "npm run sync-runtime && tauri build",
+    "test": "cargo test --manifest-path src-tauri/Cargo.toml"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "2.11.0"
+  }
+}

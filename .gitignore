@@ -1,42 +1,25 @@
 # 依赖
 node_modules/
+claude-tauri/src-tauri/target/
+claude-tauri/src-tauri/gen/
 
 # 打包产物
 dist/
 dist-*/
 _pack/
+docs/tmp
 
 # 运行时镜像（650MB，不进版本库；用 build-rootfs.sh 生成或单独传递）
-claude-desktop/runtime/rootfs.tar.gz
-claude-desktop/runtime/rootfs-slim.tar.gz
+claude-tauri/runtime/rootfs.tar.gz
+claude-tauri/runtime/rootfs-slim.tar.gz
 
 # sync-scripts 生成的副本（真源在 claude-vm/vm/）
-claude-desktop/runtime/scripts/
-claude-desktop/runtime/assets/
+claude-tauri/runtime/scripts/
+claude-tauri/runtime/assets/
 
-# 排障临时物
-build/tmp-ud*/
-build/*.png
-build/*.log
-build/rootfs-full-backup.tar.gz
-build/slimtest/
 *.log
 
-# 输入法复现的生成物（输出文本 / 截图，不进版本库；脚本本身入库）
-build/ime-*-out.txt
-build/shots/
-
-# TUN spike / 产品链路验证的输出（脚本本身入库）
-build/tun-*-out.txt
-
-# WSL 发行版导出
-slim*.tar.gz
-
-# 本地构建缓存 / CI 虚拟磁盘 / 截图（2.4 GB，含 vhdx，绝不能进版本库）
-# 但打包图标是构建必需品（package.json → build.icon），单独放行
-claude-desktop/build/*
-!claude-desktop/build/icon.png
-!claude-desktop/build/icon.ico
+# 本地虚拟磁盘
 *.vhdx
 
 # 工作区记忆与本地会话数据
@@ -50,7 +33,3 @@ skills-lock.json
 # Python 编译产物
 __pycache__/
 *.pyc
-
-# rootfs 重建的本地备份与 PDF 提取原始稿（脚本本身入库）
-build/rootfs-pre-*-backup.tar.gz
-build/pdf-summary-*/content.txt

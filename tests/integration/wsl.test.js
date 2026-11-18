@@ -12,7 +12,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert');
 const { spawnSync } = require('node:child_process');
-const { loadSegment } = require('../loader');
 
 const DISTRO = 'claude-vm';
 
@@ -27,9 +26,8 @@ function detectDistro() {
   try {
     const r = spawnSync('wsl.exe', ['-l', '-q'], { encoding: 'buffer', timeout: 20000 });
     if (r.status !== 0) return false;
-    const { decodeChunk } = loadSegment('decodeChunk');
-    const { cleanWslList } = loadSegment('cleanWslList');
-    return cleanWslList(decodeChunk(r.stdout)).some((n) => n.toLowerCase() === DISTRO);
+    const text = r.stdout.includes(0) ? r.stdout.toString('utf16le') : r.stdout.toString('utf8');
+    return text.replace(/\0|\uFEFF/g, '').split(/\r?\n/).some((n) => n.trim().toLowerCase() === DISTRO);
   } catch { return false; }
 }
 const WSL_SKIP = detectDistro() ? undefined : '本机没有 WSL2 或未导入 claude-vm 发行版';
@@ -85,15 +83,15 @@ test('坑 15 回归：lock→status→unlock 往返，默认路由可精确还�
   }
 });
 
-test('check-env.sh --json 输出契约（groups 必须是数组）', { skip: WSL_SKIP }, () => {
-  const r = wsl(['/opt/scripts/check-env.sh', '--json'], 120000);
+test('网络检查输出结构化分组', { skip: WSL_SKIP }, () => {
+  const r = wsl(['python3', '/opt/scripts/check-network.py'], 30000);
   if (!r.ok || !r.stdout.trim()) {
-    assert.ok(r.stderr.length === 0 || r.ok, `check-env.sh 执行失败: ${r.stderr.slice(0, 200)}`);
+    assert.ok(r.stderr.length === 0 || r.ok, `网络检查执行失败: ${r.stderr.slice(0, 200)}`);
     return;
   }
   const out = JSON.parse(r.stdout);
   assert.ok(Array.isArray(out.groups), '报告窗口依赖 data.groups 是数组');
-  assert.ok(out.summary && typeof out.summary.pass === 'number', 'summary 计数缺失');
+  assert.ok(out.groups.some((group) => group.id === 'network'), '缺少网络分组');
 });
 
 test('2.0：真源里不再有旧代理链路脚本（local-proxy / proxy-router）', () => {
@@ -103,7 +101,7 @@ test('2.0：真源里不再有旧代理链路脚本（local-proxy / proxy-router
   const srcDir = path.join(root, 'claude-vm', 'vm', 'scripts');
   assert.ok(!fs.existsSync(path.join(srcDir, 'proxy-router.js')),
     'proxy-router.js 应已从真源删除（VM 里的旧副本会在下次启动同步时移除）');
-  for (const f of ['entrypoint.sh', 'net-guard.sh', 'check-env.sh']) {
+  for (const f of ['entrypoint.sh', 'net-guard.sh']) {
     const s = fs.readFileSync(path.join(srcDir, f), 'utf8')
       .split('\n')
       .filter((l) => !l.trim().startsWith('#'))

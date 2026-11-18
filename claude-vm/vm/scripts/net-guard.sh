@@ -29,9 +29,7 @@ LOG_PREFIX="[net-guard]"
 
 # 客户端传入：strict（默认，强制熔断）/ off（退回旧行为，仅告警）
 NET_GUARD="${NET_GUARD:-strict}"
-# 出口落在这些地区时判为「代理没配好」。HK/MO 按 checkcc 口径属受限地区。
-RISK_REGIONS="${NET_GUARD_RISK_REGIONS:-CN,HK,MO}"
-# 出口地区风险是否硬阻断；设 0 只记 warn、仍放行（例如确定走的是国内中转+境外落地）
+# 严格模式按本地保存的 Anthropic 官方支持地区快照核验出口国家码。
 STRICT_REGION="${NET_GUARD_STRICT_REGION:-1}"
 # 3 秒一轮 re-assert：WSL 在网络重置/休眠恢复时可能把默认路由加回来，
 # 这是唯一需要周期性兜住的情况（代理断开本身不需要看门狗，路由表里就没那条路）。
@@ -94,7 +92,8 @@ fi
 echo $$ > "$PIDFILE"
 # 注意：退出时**不 unlock**。fail-closed 的语义就是「守卫死了，网络也应保持封锁」，
 # 不能在脚本异常退出时把直连放回去。要恢复只有显式 NET_GUARD=off 或重启发行版。
-trap 'rm -f "$PIDFILE"' EXIT INT TERM
+trap 'if [ "$(cat "$PIDFILE" 2>/dev/null)" = "$$" ]; then rm -f "$PIDFILE"; fi' EXIT
+trap 'exit 0' INT TERM
 
 # ------------------------------------------------------------
 # [0] 先熔断。没配代理也要锁 —— 用一个不可达的占位地址，效果是全断网。
@@ -132,104 +131,66 @@ fi
 #     全部并发，整体耗时约等于最慢的那一发（~10s），不串行叠加。
 # ------------------------------------------------------------
 preflight() {
+  # Validate the local protection prerequisites before any external request.
+  DIRECT_LEAK=unknown
+  EXIT_IP=''; EXIT_COUNTRY=''; EXIT_CITY=''; EXIT_ORG=''
+  if ! pgrep -x mihomo >/dev/null 2>&1 || ! grep -qE '^ *Meta:' /proc/net/dev 2>/dev/null; then
+    PF_REASON=leak-detected
+    PF_MSG="代理内核或 TUN 网卡不可用，已拒绝放行。"
+    return 1
+  fi
+  if [ "$LOCKED" != "1" ] || ! python3 "$PY" status 2>/dev/null | python3 -c 'import json,sys; x=json.load(sys.stdin); sys.exit(0 if x.get("locked") is True and x.get("ipv6_disabled") is True else 1)' 2>/dev/null; then
+    PF_REASON=lock-failed
+    PF_MSG="无法确认路由封锁和 IPv6 状态，已拒绝放行。"
+    return 1
+  fi
+  if [ "$(awk '/^nameserver[[:space:]]/{print $2}' /etc/resolv.conf)" != "127.0.0.1" ]; then
+    PF_REASON=dns-not-ready
+    PF_MSG="无法确认虚拟机 DNS 配置，已拒绝放行。"
+    return 1
+  fi
   local T; T="$(mktemp -d)"
-
-  # --connect-timeout 是给「内核没起来 / 节点不可达」准备的：
-  # 没有它，连接被静默丢包时要干等满 --max-time 才报错，用户盯着界面十秒没反馈。
-  ( curl -s --connect-timeout 3 --max-time 10 https://ipinfo.io/json > "$T/via" 2>/dev/null ) &
-  ( curl -s --connect-timeout 3 --max-time 8  https://api.ipify.org > "$T/s1" 2>/dev/null ) &
-  ( curl -s --connect-timeout 3 --max-time 8  https://ipinfo.io/ip   > "$T/s2" 2>/dev/null ) &
-  ( curl -s --connect-timeout 3 --max-time 8  https://api.ip.sb/ip  > "$T/s3" 2>/dev/null ) &
-  ( curl -s -o /dev/null -w '%{http_code}' --connect-timeout 3 --max-time 10 \
-      https://api.anthropic.com > "$T/anth" 2>/dev/null ) &
-  # 封锁验证：显式绕过代理，必须失败
-  ( curl -s --connect-timeout 2 --max-time 4 --noproxy '*' https://ipinfo.io/ip > "$T/direct" 2>/dev/null ) &
-  wait
-
-  mapfile -t INFO < <(python3 - "$T" <<'PY'
-import json, os, sys
-d = sys.argv[1]
-def load(n):
-    try:
-        return open(os.path.join(d, n)).read().strip()
-    except OSError:
-        return ''
-def jget(s, k):
-    try:
-        return str(json.loads(s).get(k, '') or '').replace('\n', ' ')
-    except Exception:
-        return ''
-v = load('via')
-for k in ('ip', 'country', 'city', 'org'):
-    print(jget(v, k))
-# 三个独立情报源去重后的出口集合
-ips = []
-for n in ('s1', 's2', 's3'):
-    x = load(n).split()[0] if load(n).split() else ''
-    if x and x not in ips:
-        ips.append(x)
-print('|'.join(ips))
-print(load('anth'))
-print('yes' if load('direct') else 'no')   # yes = 直连仍能出网 = 泄漏
+  curl -fsS --noproxy '*' --connect-timeout 3 --max-time 10 https://ipinfo.io/json > "$T/via" 2>/dev/null || true
+  mapfile -t INFO < <(python3 - "$T/via" <<'PY'
+import ipaddress, json, sys
+try:
+    with open(sys.argv[1], encoding='utf-8') as f:
+        data = json.load(f)
+    ip = ipaddress.ip_address(data.get('ip', ''))
+    if not ip.is_global:
+        raise ValueError('not a public address')
+    for value in (str(ip), data.get('country', ''), data.get('city', ''), data.get('org', '')):
+        print(str(value or '').replace('\n', ' ').replace('\r', ' '))
+except (OSError, ValueError, TypeError):
+    pass
 PY
 )
+  rm -rf "$T"
   EXIT_IP="${INFO[0]:-}"
   EXIT_COUNTRY="${INFO[1]:-}"
   EXIT_CITY="${INFO[2]:-}"
   EXIT_ORG="${INFO[3]:-}"
-  MULTI_IPS="${INFO[4]:-}"
-  ANTH_CODE="${INFO[5]:-}"
-  DIRECT_LEAK="${INFO[6]:-unknown}"
-  rm -rf "$T"
-
-  # `--noproxy '*'` 只是不让 curl 用应用层代理，包照样被 TUN 抓走，
-  # 所以「直连探测能通」不等于泄漏。真正的前提是：容器内内核活着 + Meta 网卡存在。
-  if pgrep -x mihomo >/dev/null 2>&1 && grep -qE '^ *Meta:' /proc/net/dev 2>/dev/null; then
-    DIRECT_LEAK=no
-  else
-    DIRECT_LEAK=yes
-  fi
-
-  # 判定按严重度从高到低，第一个命中即返回
-  if [ "$DIRECT_LEAK" = "yes" ]; then
-    PF_REASON=leak-detected
-    PF_MSG="容器内内核或 TUN 网卡不存在，出口未被接管，已拒绝放行。请查看 /run/claude-vm/tun-core.log。"
-    return 1
-  fi
-  if [ "$LOCKED" != "1" ]; then
-    PF_REASON=lock-failed
-    PF_MSG="网络熔断未生效，已拒绝放行。"
-    return 1
-  fi
   if [ -z "$EXIT_IP" ]; then
     PF_REASON=proxy-unreachable
-    PF_MSG="容器内内核取不到出口信息：内核可能没起来、选中节点不可达，或 YAML 配置有误。网络已保持切断，不会直连泄漏。"
+    PF_MSG="无法获取有效的公网出口信息，请检查节点或稍后重试。"
     return 1
   fi
-  case ",$RISK_REGIONS," in
-    *",$EXIT_COUNTRY,"*)
-      if [ "$STRICT_REGION" = "1" ]; then
+  if [ "$STRICT_REGION" = "1" ]; then
+    _region_status=$(python3 /opt/scripts/claude-supported-regions.py "$EXIT_COUNTRY" 2>/dev/null || true)
+    case "$_region_status" in
+      supported) ;;
+      unsupported)
         PF_REASON=exit-region-risk
-        PF_MSG="出口落在受限地区（$EXIT_COUNTRY）。多半是选中的节点在国内，或订阅分流把流量直连了。请换境外节点后重启。"
-        return 1
-      fi
-      ;;
-  esac
-  # 多源不一致 = 按域名分流，正是 checkcc「多源 IP」扣分项，也是最容易露馅的
-  if [ -n "$MULTI_IPS" ] && printf '%s' "$MULTI_IPS" | grep -q '|'; then
-    PF_REASON=split-exit
-    PF_MSG="同一次检测出现多个出口（$MULTI_IPS），说明订阅的分流规则没被忽略、或内核仍按域名选路。应全量走选中的单一节点。"
-    return 1
-  fi
-  if [ -n "$ANTH_CODE" ] && [ "$ANTH_CODE" != "200" ] \
-     && [ "$ANTH_CODE" != "301" ] && [ "$ANTH_CODE" != "302" ] \
-     && [ "$ANTH_CODE" != "401" ] && [ "$ANTH_CODE" != "403" ] && [ "$ANTH_CODE" != "404" ]; then
-    PF_REASON=anthropic-unreachable
-    PF_MSG="访问 api.anthropic.com 失败（HTTP ${ANTH_CODE:-000}）。Claude Code 会直接不可用，请检查选中的节点。"
-    return 1
+        PF_MSG="出口地区未列入本地保存的 Anthropic 支持地区名单，请检查所选节点。"
+        return 1 ;;
+      *)
+        PF_REASON=exit-region-unknown
+        PF_MSG="无法确认出口地区或支持地区名单不可用，已拒绝放行。"
+        return 1 ;;
+    esac
   fi
   PF_REASON=ok
-  PF_MSG="网络已锁定：容器内内核经 TUN 接管全部流量，内核退出即断网，宿主代理软件的模式与本机无关。出口 ${EXIT_IP}${EXIT_COUNTRY:+ · $EXIT_COUNTRY}${EXIT_CITY:+ · $EXIT_CITY}。"
+  PF_MSG="网络保护条件和出口地区检查通过。出口 ${EXIT_IP}${EXIT_COUNTRY:+ · $EXIT_COUNTRY}${EXIT_CITY:+ · $EXIT_CITY}。"
   return 0
 }
 

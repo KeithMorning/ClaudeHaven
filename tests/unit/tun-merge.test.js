@@ -8,7 +8,8 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
-const { ROOT, readRel } = require('../loader');
+const ROOT = path.resolve(__dirname, '../..');
+const readRel = (name) => fs.readFileSync(path.join(ROOT, name), 'utf8');
 
 const PY = spawnSync('python3', ['-c', 'print("ok")'], { encoding: 'utf8' });
 const hasPy = PY.status === 0;
@@ -94,15 +95,6 @@ test('坑 24：strip_keys 保留 proxies 段、剥离订阅分流段', { skip: !
   assert.ok(kept.some((l) => l.includes('LAX-Cogent-Reality')), 'proxies 段必须原样保留');
   assert.ok(!kept.some((l) => l.includes('MATCH,DIRECT')), '订阅 rules 必须剥离');
   assert.ok(!kept.some((l) => l.trim().startsWith('mode:')), '订阅 mode 必须剥离');
-});
-
-test('客机与宿主对同一份 YAML 解析结果一致（同一套状态机）', { skip: !hasPy && 'python3 不可用' }, () => {
-  const { extractNodes } = require('../../claude-desktop/app/lib/tun-config');
-  for (const yaml of [TYPE_FIRST, NAME_FIRST]) {
-    const host = extractNodes(yaml).map((n) => n.name);
-    const guest = callPython('m.node_names(lines)', yaml);
-    assert.deepStrictEqual(guest, host, '客机与宿主节点列表分叉会直接导致内核起不来');
-  }
 });
 
 test('坑 24：net-guard.sh 不得再有「赋值里混入 # 分隔线」的垃圾行', () => {
