@@ -11,11 +11,11 @@
   <div class="shell">
     <aside class="rail">
       <div class="brand"><img class="brand-mark" src="assets/claude-cage.png" alt=""><div><strong>CLAUDE HAVEN</strong><small>PRIVATE WORKSPACE</small></div></div>
-      <div class="rail-label">WORKSPACE</div>
+      <div class="rail-label">CONTROL</div>
       <nav aria-label="主导航">
         <button class="nav-item active" type="button" data-page="home"><span class="nav-icon">▦</span> 工作台 <span class="nav-dot"></span></button>
-        <button class="nav-item" type="button" data-page="network"><span class="nav-icon">◈</span> 网络设置</button>
         <button class="nav-item" type="button" data-page="files"><span class="nav-icon">▤</span> 工作区</button>
+        <button class="nav-item" type="button" data-page="system"><span class="nav-icon">⚙</span> 系统设置</button>
       </nav>
       <div class="rail-bottom"><span class="rail-pulse"></span><strong>本地工作环境</strong></div>
     </aside>
@@ -45,9 +45,9 @@
         </section>
         <span id="runtimeDetail" hidden></span>
       </section>
-      <section class="content settings-view" data-view="network" hidden>
+      <section class="content settings-view" data-view="system" hidden>
         <div class="settings-inner">
-        <div class="heading"><div><div class="eyebrow"><span></span> CONNECTION</div><h1>网络设置<span class="heading-period">.</span></h1><p>配置虚拟环境使用的出口节点。</p></div></div>
+        <div class="heading"><div><div class="eyebrow"><span></span> SYSTEM</div><h1>系统设置<span class="heading-period">.</span></h1><p>管理网络连接和虚拟环境。</p></div></div>
         <div class="settings-card"><div class="settings-heading"><div><span class="section-kicker">01 / NETWORK</span><h2>网络连接</h2><p>从 Clash / Mihomo 配置中选择一个节点作为出口。</p></div><div class="card-icon warm">⌁</div></div>
           <label for="yamlPath">配置文件</label><div class="field-row"><input id="yamlPath" type="text" readonly placeholder="选择 .yaml 或 .yml 文件"><button id="chooseYaml" class="secondary-button" type="button">选择文件</button></div>
           <p class="field-help">应用使用所选节点并管理虚拟机 DNS。启动时确认网络保护和出口地区；出口 IP 不能证明实际所在地。</p>
@@ -55,6 +55,11 @@
           <div id="latencyResult" class="latency-result" aria-live="polite"></div>
           <div class="settings-footer"><span id="networkMessage" role="status">配置仅保存在本机。</span><button id="saveNetwork" class="secondary-button" type="button">保存设置</button></div>
         </div>
+        <section class="settings-card reset-card" aria-labelledby="resetTitle">
+          <div class="settings-heading"><div><span class="section-kicker">02 / ENVIRONMENT</span><h2 id="resetTitle">重置系统</h2><p>删除当前 Linux 虚拟环境，之后可重新启动一个干净环境。</p></div><div class="card-icon reset-icon" aria-hidden="true">↺</div></div>
+          <div class="reset-warning"><strong>此操作会删除虚拟环境中的所有数据</strong><p>包括 Claude 登录状态、虚拟环境内的文件和已安装内容。Windows 共享工作区及本应用保存的网络配置会保留。</p></div>
+          <div class="settings-footer"><span id="resetMessage" role="status">重置后需要重新启动环境并登录 Claude。</span><button id="openReset" class="danger-button" type="button">重置系统</button></div>
+        </section>
         </div>
       </section>
       <section class="content settings-view" data-view="files" hidden>
@@ -69,6 +74,20 @@
         </div>
       </section>
     </main>
+  </div>
+  <div class="reset-scrim" id="resetScrim" hidden>
+    <section class="reset-dialog" role="alertdialog" aria-modal="true" aria-labelledby="resetDialogTitle" aria-describedby="resetDialogDescription">
+      <div class="reset-dialog-mark" aria-hidden="true">!</div>
+      <div class="reset-dialog-copy">
+        <span class="section-kicker">PERMANENT ACTION</span>
+        <h2 id="resetDialogTitle">确认重置虚拟环境？</h2>
+        <p id="resetDialogDescription">Claude 登录状态、虚拟环境内的文件和安装内容都会被删除。Windows 共享工作区和应用网络配置会保留。</p>
+        <label for="resetPhrase">输入 <strong>重置环境</strong> 以确认</label>
+        <input id="resetPhrase" type="text" autocomplete="off" spellcheck="false" placeholder="重置环境">
+        <div id="resetDialogError" class="reset-dialog-error" role="status"></div>
+        <div class="reset-dialog-actions"><button id="cancelReset" class="secondary-button" type="button">取消</button><button id="confirmReset" class="danger-button" type="button" disabled>永久删除并重置</button></div>
+      </div>
+    </section>
   </div>
 </body>
 </html>

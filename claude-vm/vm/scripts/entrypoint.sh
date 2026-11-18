@@ -151,22 +151,15 @@ fi
   echo "ts=$(date +%s)"
 } > /run/claude-vm/dns.state
 
-# 2.67) 首次启动生成本环境独有的身份
-#   WSL 默认继承宿主计算机名（实测 HomeVisionPC），/var/lib/dbus/machine-id 来自 Docker
-#   模板、所有安装都一样。检测站看不到这两项，但它们会混进诊断包、日志与遥测，
-#   形成「同一镜像批量部署」的指纹。**只生成一次**并持久化：每次启动都换反而更像新机器。
+# 2.67) 首次启动生成主机名和 machine-id，并在此实例中保留。
+#   同一基础镜像导入多个实例时，各实例有独立标识。
 ID_FILE=/opt/config/identity
 if [ ! -s "$ID_FILE" ]; then
-  _hn=$(python3 -c "import secrets,string;print('DESKTOP-'+''.join(secrets.choice(string.ascii_uppercase+string.digits) for _ in range(7)))" 2>/dev/null)
-  _mid=$(dbus-uuidgen 2>/dev/null)
-  [ -n "$_hn" ]  || _hn="DESKTOP-$(date +%s | tail -c 8)"
-  [ -n "$_mid" ] || _mid=$(head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n')
-  {
-    echo "vm_hostname=$_hn"
-    echo "vm_machine_id=$_mid"
-    echo "created=$(date -u +%FT%TZ)"
-  } > "$ID_FILE"
-  echo "[claude-vm] 已生成独立身份: $_hn"
+  _hn=$(python3 -c 'import secrets; print("host-" + secrets.token_hex(5))')
+  _mid=$(python3 -c 'import uuid; print(uuid.uuid4().hex)')
+  (umask 077; printf 'vm_hostname=%s\nvm_machine_id=%s\ncreated=%s\n' \
+    "$_hn" "$_mid" "$(date -u +%FT%TZ)" > "$ID_FILE")
+  echo "[claude-vm] 已初始化实例标识"
 fi
 . "$ID_FILE"
 if [ -n "$vm_hostname" ]; then

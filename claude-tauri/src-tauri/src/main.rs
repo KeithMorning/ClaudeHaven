@@ -578,6 +578,43 @@ async fn stop_runtime() -> Result<(), String> {
     Err("当前仅支持 Windows。".into())
 }
 
+#[tauri::command]
+async fn reset_system(confirmation: String) -> Result<(), String> {
+    if confirmation != "RESET_CLAUDE_ENVIRONMENT" {
+        return Err("重置确认无效，未执行任何操作。".into());
+    }
+    #[cfg(windows)]
+    {
+        let lock = take_runtime_lock()?;
+        tauri::async_runtime::spawn_blocking(move || {
+            let _lock = lock;
+            runtime::shutdown(&mut runtime::WslStop)?;
+            let registered = wsl(&["--list", "--quiet"])
+                .map_err(|e| format!("无法检查虚拟环境：{e}"))?;
+            if !registered.status.success() {
+                return Err(format!("无法检查虚拟环境：{}", runtime::output_text(&registered)));
+            }
+            if !runtime::output_text(&registered)
+                .lines()
+                .any(|line| line.trim().eq_ignore_ascii_case("claude-vm"))
+            {
+                return Ok(());
+            }
+            let output = wsl(&["--unregister", "claude-vm"])
+                .map_err(|e| format!("无法删除虚拟环境：{e}"))?;
+            if output.status.success() {
+                Ok(())
+            } else {
+                Err(format!("删除虚拟环境失败：{}", runtime::output_text(&output)))
+            }
+        })
+        .await
+        .map_err(|e| format!("系统重置中断：{e}"))?
+    }
+    #[cfg(not(windows))]
+    Err("当前仅支持 Windows。".into())
+}
+
 #[derive(Serialize)]
 struct RuntimeStatus {
     wsl_available: bool,
@@ -717,6 +754,7 @@ fn main() {
             start_runtime,
             restore_session,
             stop_runtime,
+            reset_system,
             guard_status,
             clipboard_read_text,
             clipboard_write_text

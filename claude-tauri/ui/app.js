@@ -124,7 +124,7 @@ function showProtection(state) {
 function switchPage(page) {
   document.querySelectorAll('[data-page]').forEach((el) => el.classList.toggle('active', el.dataset.page === page));
   document.querySelectorAll('[data-view]').forEach((el) => { el.hidden = el.dataset.view !== page; });
-  $('pageTitle').textContent = ({ home: '虚拟桌面', network: '网络设置', files: '工作区' })[page] || 'Claude Haven';
+  $('pageTitle').textContent = ({ home: '虚拟桌面', files: '工作区', system: '系统设置' })[page] || 'Claude Haven';
 }
 document.querySelectorAll('[data-page]').forEach((el) => el.addEventListener('click', () => switchPage(el.dataset.page)));
 
@@ -570,7 +570,7 @@ async function refreshStatus(manual = false) {
 $('refresh').addEventListener('click', () => { void refreshStatus(); });
 $('startRuntime').addEventListener('click', () => {
   if ($('startRuntime').dataset.action === 'network-settings') {
-    switchPage('network');
+    switchPage('system');
     return;
   }
   stoppedByUser = false;
@@ -654,5 +654,59 @@ $('installWsl').addEventListener('click', async () => {
   try { await invoke('install_wsl'); $('installNote').textContent = '安装命令已完成，请按系统提示重启电脑并重新检查。'; }
   catch (error) { $('installNote').textContent = String(error); }
   finally { button.disabled = false; }
+});
+$('openReset').addEventListener('click', () => {
+  $('resetPhrase').value = '';
+  $('confirmReset').disabled = true;
+  $('resetDialogError').textContent = '';
+  $('resetScrim').hidden = false;
+  $('resetPhrase').focus();
+});
+$('cancelReset').addEventListener('click', () => { $('resetScrim').hidden = true; $('openReset').focus(); });
+$('resetScrim').addEventListener('click', (event) => {
+  if (event.target === $('resetScrim')) $('cancelReset').click();
+});
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && !$('resetScrim').hidden && !$('cancelReset').disabled) $('cancelReset').click();
+});
+$('resetPhrase').addEventListener('input', () => {
+  $('confirmReset').disabled = $('resetPhrase').value.trim() !== '重置环境';
+});
+$('confirmReset').addEventListener('click', async () => {
+  const button = $('confirmReset');
+  if (button.disabled || runtimeInFlight) return;
+  runtimeInFlight = true;
+  button.disabled = true;
+  $('cancelReset').disabled = true;
+  $('resetDialogError').textContent = '正在安全停止并删除虚拟环境…';
+  try {
+    await invoke('reset_system', { confirmation: 'RESET_CLAUDE_ENVIRONMENT' });
+    sessionStarted = false;
+    stoppedByUser = true;
+    autoStartDone = true;
+    statusGeneration++;
+    lastGuardState = '';
+    resetClipboard();
+    $('desktopFrame').hidden = true;
+    $('desktopFrame').src = 'about:blank';
+    $('stopRuntime').hidden = true;
+    $('backgroundCheck').hidden = true;
+    $('liveLatency').textContent = '';
+    showProtection('idle');
+    $('resetScrim').hidden = true;
+    $('resetMessage').textContent = '环境已清除，网络和共享目录设置仍保留。回到工作台即可启动新环境。';
+    switchPage('home');
+    runtimeInFlight = false;
+    await refreshStatus();
+    $('stageTitle').textContent = '虚拟环境已重置';
+    $('stageDescription').textContent = '已清除环境数据，可以用新 Claude 账号重新登录。';
+    $('installNote').textContent = '网络与工作区设置仍然保留。';
+  } catch (error) {
+    $('resetDialogError').textContent = String(error);
+    button.disabled = false;
+  } finally {
+    runtimeInFlight = false;
+    $('cancelReset').disabled = false;
+  }
 });
 void loadConfig().then(() => refreshStatus());

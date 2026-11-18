@@ -93,3 +93,26 @@ main{min-height:0;overflow:hidden}
 .guard-status:not([data-state="guarded"]) .guard-lock::before{transform:translateX(4px) rotate(22deg);transform-origin:bottom left}
 #stopRuntime,#refresh{display:none}.stage-label{display:none}
 .brand-mark{display:block;flex:none;width:38px;height:38px;object-fit:contain;background:transparent;border-radius:0}
+.reset-card{margin-top:16px;border-color:#483b36}
+.reset-card .settings-heading{border-bottom-color:#403735}
+.reset-icon{color:#d69b7c;border-color:#5b4941;font-size:22px}
+.reset-warning{padding:14px 16px;border:1px solid #59443a;border-radius:7px;background:#292321}
+.reset-warning strong{color:#edb38f;font-size:12px}
+.reset-warning p{margin:7px 0 0;color:#a9a39e;font-size:11px;line-height:1.7}
+.danger-button{min-height:36px;padding:0 14px;border:1px solid #875039;border-radius:6px;background:#75442f;color:#fff0e7;font-size:12px;font-weight:600;cursor:pointer;transition:background .15s,border-color .15s}
+.danger-button:hover:not(:disabled){background:#925638;border-color:#b36d4b}
+.danger-button:disabled{opacity:.45;cursor:not-allowed}
+.reset-scrim[hidden]{display:none}
+.reset-scrim{position:fixed;inset:0;z-index:100;display:grid;place-items:center;padding:24px;background:#080a0ce0;backdrop-filter:blur(5px)}
+.reset-dialog{display:flex;gap:18px;width:min(100%,500px);padding:25px;background:#1b1f22;border:1px solid #57443a;border-radius:12px;box-shadow:0 24px 80px #000b}
+.reset-dialog-mark{display:grid;place-items:center;width:34px;height:34px;flex:none;border:1px solid #875039;border-radius:9px;background:#322720;color:#edb38f;font-size:18px;font-weight:700}
+.reset-dialog-copy{min-width:0;flex:1}
+.reset-dialog-copy h2{margin:7px 0 8px;color:#f1ece7;font-size:17px}
+.reset-dialog-copy>p{margin:0 0 18px;color:#aaa9a4;font-size:12px;line-height:1.75}
+.reset-dialog-copy label{display:block;margin-bottom:7px;color:#c9c8c3;font-size:11px}
+.reset-dialog-copy label strong{color:#f0b391;font-weight:700}
+.reset-dialog-copy input{width:100%;height:40px;padding:0 12px;border:1px solid #494540;border-radius:6px;background:#111416;color:#f1ece7;font:inherit;font-size:13px;outline:none}
+.reset-dialog-copy input:focus{border-color:#d08a66;box-shadow:0 0 0 2px #d08a6630}
+.reset-dialog-error{min-height:20px;margin-top:8px;color:#e9aa88;font-size:11px;line-height:1.5}
+.reset-dialog-actions{display:flex;justify-content:flex-end;gap:9px;margin-top:11px}
+.reset-dialog-actions .secondary-button{min-height:36px}
