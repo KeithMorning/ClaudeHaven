@@ -1,6 +1,6 @@
 <div align="center">
-  <img src="assets/brand/claude-vm-logo.png" alt="Claude VM 标志" width="132" />
-  <h1>Claude VM</h1>
+  <img src="claude-tauri/ui/assets/claude-cage.png" alt="Claude Haven 标志" width="132" />
+  <h1>Claude Haven</h1>
   <p><strong>让 Claude Code 拥有自己的桌面工作区</strong></p>
   <p>在 Windows 上，把终端、浏览器与项目文件放进一张专注的 Linux 桌面。</p>
   <p>
@@ -20,7 +20,7 @@
 
 ---
 
-Claude VM 是一个面向 Claude Code 的 Windows 桌面工作台。它在 WSL2 中运行 Linux 桌面，把常用开发工具放在同一处，同时让你选择哪些项目文件夹需要与 Windows 共享。
+Claude Haven 是一个面向 Claude Code 的 Windows 桌面工作台。它在 WSL2 中运行 Linux 桌面，把常用开发工具放在同一处，同时让你选择哪些项目文件夹需要与 Windows 共享。
 
 > **当前为开发预览版。** 目前面向 Windows x64 + WSL2，尚未发布正式安装包；macOS 和 Linux 桌面端暂不支持。
 
@@ -104,7 +104,7 @@ npm run build
 
 ## 参与项目
 
-Claude VM 仍在快速打磨中。遇到问题时，欢迎提交 [Issue](https://github.com/KeithMorning/ClaudeVM/issues)：请附上 Windows 版本、复现步骤和相关日志，并先移除配置文件中的节点地址、密码及其他个人信息。
+Claude Haven 仍在快速打磨中。遇到问题时，欢迎提交 [Issue](https://github.com/KeithMorning/ClaudeVM/issues)：请附上 Windows 版本、复现步骤和相关日志，并先移除配置文件中的节点地址、密码及其他个人信息。
 
 ## 许可
 

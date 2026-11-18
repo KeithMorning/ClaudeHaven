@@ -99,13 +99,32 @@ setInterval(() => { if (sessionStarted && !clipboardConnected) sendDesktop({ typ
 function invalidateCheck() {
   checkGeneration++;
   $('checkResults').replaceChildren();
-  if (!$('checkPopover').hidden) $('checkMessage').textContent = '配置已变化，请重新检查实际连接。';
+  $('backgroundCheck').classList.remove('attention');
+  $('backgroundCheckLabel').textContent = '网络详情';
+  $('checkMessage').textContent = '连接状态或配置已变化，请重新检查。';
+}
+
+const protectionLabels = {
+  idle: '网络保护未启用',
+  checking: '正在验证网络保护',
+  guarded: '网络保护已开启',
+  blocked: '网络保护未通过检查',
+  proxy_down: '出口节点已断开',
+  off: '网络保护已关闭',
+  unknown: '网络保护状态待确认',
+};
+
+function showProtection(state) {
+  const label = protectionLabels[state];
+  $('guardIndicator').dataset.state = state;
+  if ($('desktopStatus').textContent !== label) $('desktopStatus').textContent = label;
+  $('liveLatency').hidden = state !== 'guarded' || !$('liveLatency').textContent;
 }
 
 function switchPage(page) {
   document.querySelectorAll('[data-page]').forEach((el) => el.classList.toggle('active', el.dataset.page === page));
   document.querySelectorAll('[data-view]').forEach((el) => { el.hidden = el.dataset.view !== page; });
-  $('pageTitle').textContent = ({ home: '虚拟桌面', network: '网络设置', files: '工作区' })[page] || 'Claude VM';
+  $('pageTitle').textContent = ({ home: '虚拟桌面', network: '网络设置', files: '工作区' })[page] || 'Claude Haven';
 }
 document.querySelectorAll('[data-page]').forEach((el) => el.addEventListener('click', () => switchPage(el.dataset.page)));
 
@@ -237,21 +256,24 @@ async function probeLatencies() {
 
 function updateLiveLatency(ms, name) {
   const el = $('liveLatency');
-  el.textContent = ms == null ? '延迟 --' : `${ms} ms`;
+  el.textContent = ms == null ? '' : `节点延迟 ${ms} ms`;
   el.title = ms == null ? '节点连接延迟暂不可用' : `节点 ${name || '出口'}的 TCP 连接延迟`;
   el.classList.toggle('slow', ms != null && ms > 300);
-  el.hidden = !sessionStarted;
+  el.hidden = !sessionStarted || lastGuardState !== 'guarded' || ms == null;
 }
 
 let liveLatencyBusy = false;
 async function pollLiveLatency() {
-  if (liveLatencyBusy || !config.yaml_path || !config.node) return;
+  if (liveLatencyBusy || !sessionStarted || !config.yaml_path || !config.node) return;
   liveLatencyBusy = true;
+  const { yaml_path, node } = config;
+  const generation = statusGeneration;
+  const isCurrent = () => sessionStarted && generation === statusGeneration
+    && yaml_path === config.yaml_path && node === config.node;
   try {
-    const ms = await invoke('node_latency', { path: config.yaml_path, node: config.node });
-    const value = Array.isArray(ms) ? ms.find((item) => item.name === config.node)?.ms ?? null : null;
-    updateLiveLatency(value, config.node);
-  } catch (_) { updateLiveLatency(null); }
+    const ms = await invoke('node_latency', { path: yaml_path, node });
+    if (isCurrent()) updateLiveLatency(Array.isArray(ms) ? ms.find((item) => item.name === node)?.ms : null, node);
+  } catch (_) { if (isCurrent()) updateLiveLatency(null); }
   finally { liveLatencyBusy = false; }
 }
 setInterval(pollLiveLatency, 8000);
@@ -309,8 +331,6 @@ function toggleCheckPopover(show) {
   $('backgroundCheck').setAttribute('aria-expanded', String(next));
   if (next) $('checkPopoverClose').focus();
 }
-$('backgroundCheck').setAttribute('aria-expanded', 'false');
-$('backgroundCheck').setAttribute('aria-controls', 'checkPopover');
 $('backgroundCheck').addEventListener('click', () => toggleCheckPopover());
 $('checkPopoverClose').addEventListener('click', () => { toggleCheckPopover(false); $('backgroundCheck').focus(); });
 document.addEventListener('pointerdown', (event) => {
@@ -332,7 +352,7 @@ async function runNetworkCheck() {
   $('stopRuntime').title = '环境检查完成后可以停止';
   const badge = $('backgroundCheck');
   badge.hidden = false;
-  badge.classList.remove('done', 'attention');
+  badge.classList.remove('attention');
   $('backgroundCheckLabel').textContent = '网络检查中';
   $('checkResults').replaceChildren();
   $('checkMessage').textContent = '正在检查当前连接…';
@@ -354,14 +374,13 @@ async function runNetworkCheck() {
     }));
     const warnings = groups.flatMap((group) => group.items || []).filter((item) => item.status === 'warn' || item.status === 'fail').length;
     $('checkMessage').textContent = count ? `已完成 ${count} 项检查；连接变化后请重新检查。` : '没有获取到检查结果。';
-    badge.classList.add('done');
     badge.classList.toggle('attention', !count || warnings > 0);
-    $('backgroundCheckLabel').textContent = !count ? '检查未完成' : warnings ? `网络检查 · ${warnings} 项需关注` : '网络检查已完成';
+    $('backgroundCheckLabel').textContent = warnings ? `网络详情 · ${warnings} 项需关注` : '网络详情';
   } catch (error) {
     if (generation === checkGeneration) {
       $('checkMessage').textContent = String(error);
-      badge.classList.add('done', 'attention');
-      $('backgroundCheckLabel').textContent = '网络检查未完成';
+      badge.classList.add('attention');
+      $('backgroundCheckLabel').textContent = '网络详情';
     }
   }
   finally {
@@ -393,7 +412,6 @@ async function loadConfig() {
         void probeLatencies();
       }
     }
-    void pollLiveLatency();
   } catch (error) {
     nodeConfigIssue = String(error);
     $('networkMessage').textContent = nodeConfigIssue;
@@ -410,11 +428,12 @@ async function connectDesktop() {
   $('stageContent').hidden = true;
   $('startupOverlay').hidden = true;
   $('stopRuntime').hidden = false;
-  $('desktopStatus').textContent = '虚拟桌面已启动 · 守卫已确认';
-  $('guardIndicator').title = '网络保护已开启';
+  lastGuardState = 'guarded';
+  showProtection(lastGuardState);
   $('topStatus').textContent = '运行中';
   void pollLiveLatency();
   invalidateCheck();
+  $('backgroundCheck').hidden = false;
   await refreshGuard();
   if (lastGuardState === 'guarded') void runNetworkCheck();
 }
@@ -423,6 +442,7 @@ async function startSession() {
   if (runtimeInFlight) return;
   autoStartDone = true;
   runtimeInFlight = true;
+  showProtection('checking');
   $('startRuntime').disabled = true;
   $('stageTitle').textContent = '正在启动虚拟环境';
   $('stageDescription').textContent = '正在同步运行时并验证网络守卫，首次启动可能需要几分钟。';
@@ -456,6 +476,7 @@ async function startSession() {
     $('stageTitle').textContent = '无法完成启动';
     $('stageDescription').textContent = String(error);
     $('installNote').textContent = $('stopRuntime').hidden ? '请检查配置后重试。' : '环境已部分启动，可尝试停止环境后重试。';
+    showProtection($('stopRuntime').hidden ? 'idle' : 'unknown');
     $('startRuntime').disabled = false;
   } finally {
     unlisten();
@@ -497,12 +518,13 @@ async function refreshStatus(manual = false) {
       : !configComplete() ? '请先完成网络与工作区设置。'
       : '点击启动进入虚拟桌面。';
     if (!sessionStarted) $('installNote').textContent = '';
-    if (!sessionStarted) $('desktopStatus').textContent = status.desktop_available ? '本地桌面端口已占用 · 未验证' : '未连接';
+    if (!sessionStarted) showProtection(status.session_running ? 'unknown' : 'idle');
     $('runtimeDetail').textContent = !status.wsl_available ? 'WSL 未就绪，请检查 Windows 功能。'
       : !status.runtime_resources_available ? '运行时资源不完整。'
       : status.distro_registered ? 'WSL 可用，已发现 claude-vm。' : 'WSL 可用，运行时资源已就绪。';
     if (status.session_running && status.desktop_available && !stoppedByUser && !sessionStarted && !runtimeInFlight) {
       runtimeInFlight = true;
+      showProtection('checking');
       $('startRuntime').disabled = true;
       $('stageTitle').textContent = '正在恢复已有会话';
       $('startupTitle').textContent = '正在恢复工作空间';
@@ -521,13 +543,14 @@ async function refreshStatus(manual = false) {
           $('installNote').textContent = configComplete() ? '点击启动即可重新进入。' : '请确认网络与工作区设置。';
           $('startRuntime').disabled = !latest.wsl_available || !latest.runtime_resources_available || !configComplete();
           $('stopRuntime').hidden = true;
-          $('desktopStatus').textContent = '未连接';
+          showProtection('idle');
         } else {
           $('stageTitle').textContent = '已有会话无法恢复';
           $('stageDescription').textContent = String(error);
           $('installNote').textContent = '会话仍在运行，可检查网络后点击启动重试。';
           $('startRuntime').disabled = false;
           $('stopRuntime').hidden = false;
+          showProtection('unknown');
         }
       } finally { runtimeInFlight = false; }
       return;
@@ -539,7 +562,7 @@ async function refreshStatus(manual = false) {
     $('topStatus').textContent = '检查失败';
     $('stageTitle').textContent = '无法检查运行环境';
     $('stageDescription').textContent = '请确认应用正在 Tauri 中运行。';
-    $('desktopStatus').textContent = '状态未知';
+    if (!sessionStarted) showProtection('unknown');
     $('runtimeDetail').textContent = '无法读取 WSL 状态。';
   } finally { button.disabled = false; }
 }
@@ -565,11 +588,9 @@ $('stopRuntime').addEventListener('click', async () => {
     autoStartDone = true;
     resetClipboard();
     lastGuardState = '';
-    $('guardIndicator').className = '';
     $('desktopFrame').hidden = true; $('desktopFrame').src = 'about:blank';
-    $('liveLatency').hidden = true;
-    $('desktopStatus').textContent = '环境已停止';
-    $('guardIndicator').title = '环境已停止';
+    $('liveLatency').textContent = '';
+    showProtection('idle');
     $('stageContent').hidden = false;
     $('stageTitle').textContent = '环境已停止';
     $('stageDescription').textContent = '点击启动进入虚拟桌面。';
@@ -578,6 +599,7 @@ $('stopRuntime').addEventListener('click', async () => {
     $('startRuntime').dataset.action = 'start';
     button.hidden = true;
     $('backgroundCheck').hidden = true;
+    toggleCheckPopover(false);
     invalidateCheck();
     runtimeInFlight = false;
     await refreshStatus();
@@ -606,16 +628,14 @@ $('powerRuntime').addEventListener('click', () => {
 });
 syncPowerButton();
 async function refreshGuard() {
-  if (!sessionStarted) return;
+  if (!sessionStarted || stoppedByUser) return;
+  const generation = statusGeneration;
   let state = 'unknown';
   try { state = await invoke('guard_status'); } catch (_) { /* show unknown below */ }
-  if (!sessionStarted) return;
+  if (!sessionStarted || stoppedByUser || generation !== statusGeneration) return;
   if (lastGuardState && state !== lastGuardState) invalidateCheck();
   lastGuardState = state;
-  const labels = { guarded: '网络保护已开启', blocked: '网络保护未通过检查', proxy_down: '节点连接已断开', off: '网络保护已关闭', unknown: '网络保护状态待确认' };
-  $('desktopStatus').textContent = labels[state] || labels.unknown;
-  $('guardIndicator').title = labels[state] || labels.unknown;
-  $('guardIndicator').className = state === 'guarded' ? 'guard-ok' : state === 'unknown' ? '' : 'guard-warning';
+  showProtection(Object.hasOwn(protectionLabels, state) ? state : 'unknown');
   $('topStatus').textContent = state === 'guarded' ? '运行中' : '网络需要注意';
   $('topDot').classList.toggle('available', state === 'guarded');
 }

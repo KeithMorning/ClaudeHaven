@@ -9,12 +9,12 @@
 rounded = 0
 border_width = 1
 border_sides = T
-border_color = #262e3c 100
-background_color = #0f131a 100
-background_color_hover = #0f131a 100
-border_color_hover = #262e3c 100
-background_color_pressed = #0f131a 100
-border_color_pressed = #262e3c 100
+border_color = #323944 100
+background_color = #15191f 100
+background_color_hover = #15191f 100
+border_color_hover = #323944 100
+background_color_pressed = #15191f 100
+border_color_pressed = #323944 100
 
 # 2: 普通任务
 rounded = 7
@@ -60,13 +60,24 @@ border_color_hover = #2c3546 100
 background_color_pressed = #161c26 100
 border_color_pressed = #2c3546 100
 
+# 6: 启动器按钮
+rounded = 8
+border_width = 1
+border_sides = TBLR
+background_color = #20262e 100
+border_color = #333c48 100
+background_color_hover = #303946 100
+border_color_hover = #526074 100
+background_color_pressed = #191e26 100
+border_color_pressed = #465366 100
+
 #-------------------------------------
 # 面板
 #-------------------------------------
 panel_items = LTSC
-panel_size = 100% 46
+panel_size = 100% 48
 panel_margin = 0 0
-panel_padding = 10 5 10
+panel_padding = 13 6 16
 panel_background_id = 1
 panel_position = bottom center horizontal
 panel_layer = top
@@ -84,7 +95,7 @@ mouse_pressed_icon_asb = 100 0 0
 #-------------------------------------
 taskbar_mode = single_desktop
 taskbar_hide_if_empty = 0
-taskbar_padding = 10 0 10
+taskbar_padding = 0 0 7
 taskbar_background_id = 0
 taskbar_active_background_id = 0
 taskbar_name = 0
@@ -98,10 +109,10 @@ task_align = left
 # 任务按钮
 #-------------------------------------
 task_text = 1
-task_icon = 0
-task_centered = 1
-task_maximum_size = 220 34
-task_padding = 9 4 11
+task_icon = 1
+task_centered = 0
+task_maximum_size = 188 34
+task_padding = 10 7 8
 task_font = DejaVu Sans 10
 task_tooltip = 1
 task_thumbnail = 0
@@ -120,7 +131,7 @@ mouse_scroll_down = iconify
 #-------------------------------------
 # 托盘
 #-------------------------------------
-systray_padding = 4 2 6
+systray_padding = 4 4 8
 systray_background_id = 0
 systray_sort = ascending
 systray_icon_size = 20
@@ -130,10 +141,10 @@ systray_monitor = 1
 #-------------------------------------
 # 启动器（面板最左边那排图标）
 #-------------------------------------
-launcher_padding = 4 2 8
+launcher_padding = 0 1 7
 launcher_background_id = 0
 launcher_icon_background_id = 0
-launcher_icon_size = 30
+launcher_icon_size = 34
 launcher_icon_asb = 100 0 0
 launcher_icon_theme_override = 0
 launcher_tooltip = 1
@@ -146,11 +157,11 @@ launcher_item_app = claude-files.desktop
 # 时钟
 #-------------------------------------
 time1_format = %H:%M
-time2_format = %a %d %b
-time1_font = DejaVu Sans 11 bold
+time2_format = %m/%d · %a
+time1_font = DejaVu Sans Mono 11 bold
 time2_font = DejaVu Sans 8
-clock_font_color = #9aa6b8 100
-clock_padding = 12 0
+clock_font_color = #c5cfdb 100
+clock_padding = 5 0
 clock_tooltip =
 clock_lclick_command =
 clock_rclick_command =

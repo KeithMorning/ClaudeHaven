@@ -242,7 +242,9 @@ cp -f /opt/config/menu.xml ~/.config/openbox/menu.xml
 _obrc=/opt/assets/config/openbox-rc.xml
 [ -f "$_obrc" ] || _obrc=/opt/config/openbox-rc.xml
 cp -f "$_obrc" ~/.config/openbox/rc.xml
-cp -f /opt/config/tint2rc ~/.config/tint2/tint2rc
+_tint2rc=/opt/assets/config/tint2rc
+[ -f "$_tint2rc" ] || _tint2rc=/opt/config/tint2rc
+cp -f "$_tint2rc" ~/.config/tint2/tint2rc
 # 3.0.1) GTK 终端配置（1.0.31）：终端从 xterm 换成 lxterminal，
 #   镜像里现成的 lxterminal.conf 与旧 xterm 深色主题是同一套色值，直接沿用。
 #   lxterminal 走 GTK3 的 im-ibus.so，中文由 Pango 渲染，双宽字符宽度算得准。
@@ -299,6 +301,8 @@ cp -f "$_theme_dir"/*.xbm /usr/share/themes/Claude/openbox-3/ 2>/dev/null || tru
 
 # 3.2) 图标与壁纸（自绘 PNG：Fira Code 字形 + 品牌橙，避免方块感强的位图图标）
 node /opt/scripts/gen-art.js icons /opt/icons 64 >/dev/null 2>&1 || true
+[ ! -f /opt/assets/icons/chrome.png ] || cp -f /opt/assets/icons/chrome.png /opt/icons/globe.png
+[ ! -f /opt/assets/icons/claude-mascot.png ] || cp -f /opt/assets/icons/claude-mascot.png /opt/icons/claude.png
 if [ ! -f /opt/wall/wall.png ]; then
   node /opt/scripts/gen-art.js wallpaper /opt/wall/wall.png 1280 800 >/dev/null 2>&1 || true
 fi

@@ -3,14 +3,14 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Claude VM</title>
+  <title>Claude Haven</title>
   <link rel="stylesheet" href="style.css">
   <script src="app.js" defer></script>
 </head>
 <body>
   <div class="shell">
     <aside class="rail">
-      <div class="brand"><div class="brand-mark">›_</div><div><strong>CLAUDE VM</strong><small>PRIVATE WORKSPACE</small></div></div>
+      <div class="brand"><img class="brand-mark" src="assets/claude-cage.png" alt=""><div><strong>CLAUDE HAVEN</strong><small>PRIVATE WORKSPACE</small></div></div>
       <div class="rail-label">WORKSPACE</div>
       <nav aria-label="主导航">
         <button class="nav-item active" type="button" data-page="home"><span class="nav-icon">▦</span> 工作台 <span class="nav-dot"></span></button>
@@ -20,11 +20,28 @@
       <div class="rail-bottom"><span class="rail-pulse"></span><strong>本地工作环境</strong></div>
     </aside>
     <main>
-      <header class="topbar"><div class="crumb"><strong id="pageTitle">虚拟桌面</strong><span class="crumb-subtitle">CLAUDE VM</span></div><div class="top-right"><span class="status-dot" id="topDot"></span><span id="topStatus">正在检查</span><button id="powerRuntime" class="power-button" type="button" aria-label="启动环境" title="启动环境">⏻</button><button id="stopRuntime" type="button" hidden>停止</button><button id="refresh" type="button" hidden>刷新</button></div></header>
+      <header class="topbar"><div class="crumb"><strong id="pageTitle">虚拟桌面</strong><span class="crumb-subtitle">CLAUDE HAVEN</span></div><div class="top-right"><span class="status-dot" id="topDot"></span><span id="topStatus">正在检查</span><button id="powerRuntime" class="power-button" type="button" aria-label="启动环境" title="启动环境">⏻</button><button id="stopRuntime" type="button" hidden>停止</button><button id="refresh" type="button" hidden>刷新</button></div></header>
       <section class="content" data-view="home">
         <section class="workspace" aria-label="虚拟桌面">
           <div class="workspace-stage"><div class="stage-grid"></div><div class="stage-content" id="stageContent"><div class="stage-symbol"><span>›</span><i>_</i></div><div class="stage-label">YOUR WORKSPACE, READY WHEN YOU ARE</div><h2 id="stageTitle">正在检查运行环境</h2><p id="stageDescription">检查 WSL2 和本地虚拟桌面状态。</p><button class="primary-button" id="startRuntime" type="button" disabled>启动虚拟环境 <span>↗</span></button><button class="secondary-button install-button" id="installWsl" type="button" hidden>安装 WSL2</button><div class="stage-note" id="installNote">请先完成网络与工作区设置。</div></div><iframe id="desktopFrame" title="虚拟桌面" sandbox="allow-scripts allow-same-origin" hidden></iframe><div class="startup-overlay" id="startupOverlay" role="status" aria-live="polite" hidden><div class="startup-card"><div class="startup-orbit" aria-hidden="true"><span>›_</span></div><div><strong id="startupTitle">正在准备工作空间</strong><p id="startupDetail">正在启动虚拟桌面</p><div class="startup-track"><span></span></div></div></div></div></div>
-          <div class="workspace-footer"><span class="guard-status"><i id="guardIndicator" aria-hidden="true">◆</i><b id="desktopStatus" class="sr-only">检查中</b><span class="footer-latency" id="liveLatency" hidden></span></span><span class="footer-check"><button id="backgroundCheck" class="background-check" type="button" hidden><span class="check-spinner" aria-hidden="true"></span><span id="backgroundCheckLabel">网络检查中</span></button><div id="checkPopover" class="check-popover" role="dialog" aria-label="网络检查结果" hidden><div class="check-popover-head"><strong>网络检查</strong><button id="checkPopoverClose" class="popover-close" type="button" aria-label="关闭">×</button></div><p id="checkMessage" class="check-popover-note" role="status"></p><div id="checkResults" class="check-results"></div><button id="checkNetwork" class="secondary-button check-button" type="button">重新检查网络</button></div></span></div>
+          <div class="workspace-footer">
+            <div class="guard-status" id="guardIndicator" data-state="idle">
+              <span class="guard-lock" aria-hidden="true"></span>
+              <span id="desktopStatus" role="status">网络保护未启用</span>
+              <span class="footer-latency" id="liveLatency" hidden></span>
+            </div>
+            <div class="footer-check">
+              <button id="backgroundCheck" class="background-check" type="button" aria-controls="checkPopover" aria-expanded="false" hidden>
+                <span id="backgroundCheckLabel">网络详情</span><span class="check-chevron" aria-hidden="true"></span>
+              </button>
+              <div id="checkPopover" class="check-popover" role="dialog" aria-label="网络检查结果" hidden>
+                <div class="check-popover-head"><strong>网络检查</strong><button id="checkPopoverClose" class="popover-close" type="button" aria-label="关闭">×</button></div>
+                <p id="checkMessage" class="check-popover-note" role="status"></p>
+                <div id="checkResults" class="check-results"></div>
+                <button id="checkNetwork" class="secondary-button check-button" type="button">重新检查网络</button>
+              </div>
+            </div>
+          </div>
         </section>
         <span id="runtimeDetail" hidden></span>
       </section>

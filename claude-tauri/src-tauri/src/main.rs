@@ -669,13 +669,13 @@ fn main() {
         .setup(|app| {
             use tauri::menu::{Menu, MenuItem};
             use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-            let open = MenuItem::with_id(app, "open", "打开 Claude VM", true, None::<&str>)?;
+            let open = MenuItem::with_id(app, "open", "打开 Claude Haven", true, None::<&str>)?;
             let exit = MenuItem::with_id(app, "quit", "退出并停止环境", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&open, &exit])?;
             let icon = app.default_window_icon().ok_or("应用图标不可用")?.clone();
             TrayIconBuilder::new()
                 .icon(icon)
-                .tooltip("Claude VM")
+                .tooltip("Claude Haven")
                 .menu(&menu)
                 .show_menu_on_left_click(false)
                 .on_menu_event(|app, event| match event.id().as_ref() {
@@ -722,7 +722,7 @@ fn main() {
             clipboard_write_text
         ])
         .run(tauri::generate_context!())
-        .expect("error while running Claude VM");
+        .expect("error while running Claude Haven");
 }
 
 #[cfg(test)]
