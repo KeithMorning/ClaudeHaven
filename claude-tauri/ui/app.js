@@ -656,7 +656,7 @@ async function refreshStatus(manual = false) {
         } else {
           $('stageTitle').textContent = '已有会话无法恢复';
           $('stageDescription').textContent = String(error);
-          $('installNote').textContent = '会话仍在运行，可检查网络后点击启动重试。';
+          $('installNote').textContent = '会话仍在运行。处理上方提示后，可点击启动重试。';
           $('startRuntime').disabled = false;
           $('stopRuntime').hidden = false;
           showProtection('unknown');
