@@ -238,9 +238,10 @@ fi
 #      checkcc 的字体名单是硬编码的 17 个家族名（Noto Sans CJK SC / Source Han Sans SC /
 #      WenQuanYi Micro Hei / Microsoft YaHei …），Google Fonts 的 Noto Sans SC 不在其中；
 #      实测 canvas 字宽比对对它完全不触发，而中文渲染正常。
+# Link the verified asset already in this filesystem instead of keeping another copy.
 if [ -f /opt/assets/fonts/NotoSansSC.ttf ] && ! fc-list | grep -q 'Noto Sans SC'; then
   mkdir -p /usr/share/fonts/truetype/claude-sc
-  cp -f /opt/assets/fonts/NotoSansSC.ttf /usr/share/fonts/truetype/claude-sc/
+  ln -sfn /opt/assets/fonts/NotoSansSC.ttf /usr/share/fonts/truetype/claude-sc/NotoSansSC.ttf
   fc-cache -f >/dev/null 2>&1 || true
   echo "[claude-vm] 已安装 Noto Sans SC（中文渲染，非指纹名单字体）"
 fi
@@ -250,7 +251,7 @@ fi
 #       Google Fonts 的 `Noto Sans TC` 家族名**不在**其中（fc-scan 已验证），不增加扣分。
 if [ -f /opt/assets/fonts/NotoSansTC.ttf ] && ! fc-list | grep -q 'Noto Sans TC'; then
   mkdir -p /usr/share/fonts/truetype/claude-tc
-  cp -f /opt/assets/fonts/NotoSansTC.ttf /usr/share/fonts/truetype/claude-tc/
+  ln -sfn /opt/assets/fonts/NotoSansTC.ttf /usr/share/fonts/truetype/claude-tc/NotoSansTC.ttf
   fc-cache -f >/dev/null 2>&1 || true
   echo "[claude-vm] 已安装 Noto Sans TC（繁体笔形，非指纹名单字体）"
 fi
