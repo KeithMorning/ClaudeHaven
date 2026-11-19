@@ -20,7 +20,23 @@ INTERVAL="${DESKTOP_GUARD_INTERVAL:-4}"
 
 log() { echo "[$(date +%H:%M:%S)] $*"; }
 alive_x() { DISPLAY=:1 xprop -root >/dev/null 2>&1; }
-wallpaper_geometry=''
+wallpaper_watch() {
+  local geometry wallpaper_geometry=''
+  while true; do
+    geometry=$(xrandr --current 2>/dev/null | sed -n 's/.*current \([0-9][0-9]* x [0-9][0-9]*\).*/\1/p' | head -n 1)
+    if [ -n "$geometry" ] && [ "$geometry" != "$wallpaper_geometry" ] && [ -f /opt/wall/wall.png ]; then
+      if feh --bg-fill /opt/wall/wall.png >/dev/null 2>&1; then
+        wallpaper_geometry="$geometry"
+      fi
+    fi
+    sleep 0.25
+  done
+}
+
+# Keep wallpaper updates independent of the slower service recovery loop.
+wallpaper_watch &
+wallpaper_watcher=$!
+trap 'kill "$wallpaper_watcher" 2>/dev/null || true' EXIT
 
 # 先让 entrypoint 把三个组件都起完，否则第一轮会误判成「崩了」并抢着重复启动。
 sleep 6
@@ -34,15 +50,6 @@ while true; do
     Xtigervnc :1 -geometry "$GEOM" -depth 24 -rfbport 5901 -localhost \
       -SecurityTypes None -nolisten unix >>/root/.vnc/Xtigervnc.log 2>&1 &
     sleep 2
-  fi
-
-  # feh paints a fixed-size root pixmap. Repaint it after RandR changes the
-  # desktop size so newly exposed areas do not show the old background.
-  geometry=$(xrandr --current 2>/dev/null | sed -n 's/.*current \([0-9][0-9]* x [0-9][0-9]*\).*/\1/p' | head -n 1)
-  if [ -n "$geometry" ] && [ "$geometry" != "$wallpaper_geometry" ] && [ -f /opt/wall/wall.png ]; then
-    if feh --bg-fill /opt/wall/wall.png >/dev/null 2>&1; then
-      wallpaper_geometry="$geometry"
-    fi
   fi
 
   if alive_x && ! pgrep -x openbox >/dev/null 2>&1; then

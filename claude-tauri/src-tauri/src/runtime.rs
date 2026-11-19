@@ -229,7 +229,7 @@ pub fn shutdown(ops: &mut impl StopOperations) -> Result<(), String> {
 
 #[cfg(windows)]
 pub(crate) fn run_wsl(args: &[&str]) -> Result<std::process::Output, String> {
-    std::process::Command::new("wsl.exe")
+    std::process::Command::new(wsl_exe_path())
         .args(args)
         .creation_flags(0x08000000)
         .output()
@@ -237,13 +237,29 @@ pub(crate) fn run_wsl(args: &[&str]) -> Result<std::process::Output, String> {
 }
 
 #[cfg(windows)]
+fn wsl_exe_path() -> PathBuf {
+    let system_root = std::env::var_os("SystemRoot").unwrap_or_else(|| "C:\\Windows".into());
+    PathBuf::from(system_root).join("System32").join("wsl.exe")
+}
+
+#[cfg(windows)]
 pub(crate) fn output_text(output: &std::process::Output) -> String {
     let mut bytes = output.stdout.clone();
     bytes.extend_from_slice(&output.stderr);
-    String::from_utf8_lossy(&bytes)
-        .replace('\0', "")
+    crate::bootstrap::decode_windows_output(&bytes)
         .trim()
         .to_owned()
+}
+
+#[cfg(windows)]
+fn wsl2_probe_error(stage: &str, output: &std::process::Output) -> String {
+    let detail = output_text(output);
+    let normalized = detail.to_ascii_lowercase();
+    if normalized.contains("0x80370102") || normalized.contains("wsl_e_hyperv_not_installed") {
+        format!("{stage}：WSL 2 虚拟机无法启动（原始信息：{detail}）。可能涉及 VirtualMachinePlatform、固件虚拟化或 Hypervisor 策略；请查看系统诊断信息。")
+    } else {
+        format!("{stage}：{detail}")
+    }
 }
 
 #[cfg(windows)]
@@ -521,12 +537,23 @@ impl LaunchOperations for WslLaunch {
     }
 
     fn ensure_runtime(&mut self) -> Result<(), String> {
-        let list = run_wsl(&["--list", "--quiet"])?;
-        if output_text(&list)
-            .lines()
-            .any(|s| s.trim().eq_ignore_ascii_case("claude-vm"))
+        let list = run_wsl(&["--list", "--verbose"])?;
+        let distros = crate::bootstrap::state::parse_distro_list(&output_text(&list));
+        if let Some(distro) = distros
+            .iter()
+            .find(|distro| distro.name.eq_ignore_ascii_case("claude-vm"))
         {
-            return Ok(());
+            match distro.wsl_version {
+                Some(2) => {
+                    let probe = run_wsl(&["-d", "claude-vm", "--exec", "/bin/true"])?;
+                    if probe.status.success() {
+                        return Ok(());
+                    }
+                    return Err(wsl2_probe_error("claude-vm 已注册为 WSL 2，但最小启动探针失败", &probe));
+                }
+                Some(1) => return Err("claude-vm 已注册为 WSL 1。为保护其中数据，Claude Haven 不会自动转换或覆盖；请先备份后修复运行时。".into()),
+                _ => return Err("无法确认 claude-vm 的 WSL 架构版本；未修改现有发行版。".into()),
+            }
         }
         if !list.status.success() && !output_text(&list).contains("WSL_E_DEFAULT_DISTRO_NOT_FOUND")
         {
@@ -538,9 +565,17 @@ impl LaunchOperations for WslLaunch {
         let image = root.to_str().ok_or("运行时镜像路径无效。")?;
         let imported = run_wsl(&["--import", "claude-vm", dir, image, "--version", "2"])?;
         if imported.status.success() {
-            Ok(())
+            let probe = run_wsl(&["-d", "claude-vm", "--exec", "/bin/true"])?;
+            if probe.status.success() {
+                Ok(())
+            } else {
+                Err(wsl2_probe_error(
+                    "claude-vm 已导入，但 WSL 2 最小启动探针失败",
+                    &probe,
+                ))
+            }
         } else {
-            Err(format!("导入虚拟环境失败：{}", output_text(&imported)))
+            Err(wsl2_probe_error("导入虚拟环境失败", &imported))
         }
     }
 
@@ -590,7 +625,7 @@ impl LaunchOperations for WslLaunch {
             "INPUT_METHOD=rime".into(),
             "NOVNC_PORT=6080".into(),
         ];
-        Command::new("wsl.exe")
+        Command::new(wsl_exe_path())
             .args(["-d", "claude-vm", "-u", "root", "--", "env"])
             .args(env)
             .arg("/opt/scripts/entrypoint.sh")

@@ -108,6 +108,17 @@ fi
 
 if [ -f "$RIME_DIR/wanxiang_pure.schema.yaml" ]; then
   SCHEMA=wanxiang_pure
+  # 在完整拼音转写之后派生声母简拼，供多音节连续输入（如 ccc）组词。
+  # 用户已有方案定制时不覆盖，避免破坏其自定义规则。
+  _schema_custom="$RIME_DIR/wanxiang_pure.custom.yaml"
+  if [ ! -e "$_schema_custom" ]; then
+    cat > "$_schema_custom" <<'YAML'
+patch:
+  "speller/algebra/+":
+    - abbrev/^([zcs]h).+$/$1/
+    - abbrev/^([bpmfdtnlgkhjqxzcsryw]).+$/$1/
+YAML
+  fi
 else
   SCHEMA=luna_pinyin
 fi

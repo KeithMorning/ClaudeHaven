@@ -10,6 +10,73 @@ let stoppedByUser = false;
 let statusGeneration = 0;
 let nodeConfigIssue = '';
 const configComplete = () => Boolean(!nodeConfigIssue && config.yaml_path && config.node && config.workspace);
+let bootstrapState = null;
+let bootstrapBusy = false;
+let latestHostProbe = null;
+let lastBootstrapTask = null;
+let lastBootstrapSequence = 0;
+function formatBytes(value) {
+  if (!Number.isFinite(value) || value < 0) return '—';
+  const units = ['B', 'KB', 'MB', 'GB']; let size = value; let index = 0;
+  while (size >= 1024 && index < units.length - 1) { size /= 1024; index++; }
+  return `${size.toFixed(index ? 1 : 0)} ${units[index]}`;
+}
+function renderBootstrap(snapshot, hostProbe = latestHostProbe) {
+  if (snapshot?.task_id && snapshot.task_id === lastBootstrapTask && snapshot.sequence < lastBootstrapSequence) return;
+  if (snapshot?.task_id && snapshot.task_id !== lastBootstrapTask) {
+    lastBootstrapTask = snapshot.task_id;
+    lastBootstrapSequence = 0;
+  }
+  if (snapshot?.task_id) lastBootstrapSequence = Math.max(lastBootstrapSequence, snapshot.sequence || 0);
+  bootstrapState = snapshot;
+  const phase = snapshot?.phase || '';
+  const active = ['probing', 'downloading', 'verifying', 'awaiting_elevation', 'enabling_features', 'installing_msi', 'rechecking'].includes(phase);
+  const progress = $('bootstrapProgress');
+  const value = snapshot?.download;
+  $('cancelBootstrap').hidden = !snapshot?.can_cancel;
+  progress.hidden = !value || !active;
+  progress.classList.toggle('indeterminate', Boolean(value && !value.total_bytes));
+  if (value?.total_bytes) {
+    const percent = Math.min(100, value.downloaded_bytes / value.total_bytes * 100);
+    $('bootstrapProgressBar').style.width = `${percent}%`;
+    $('bootstrapProgressText').textContent = `${formatBytes(value.downloaded_bytes)} / ${formatBytes(value.total_bytes)} · ${percent.toFixed(0)}%`;
+  } else if (value) {
+    $('bootstrapProgressBar').style.width = '34%';
+    $('bootstrapProgressText').textContent = `${formatBytes(value.downloaded_bytes)} · 正在下载`;
+  }
+  $('bootstrapProgressSpeed').textContent = value?.bytes_per_second ? `${formatBytes(value.bytes_per_second)}/s` : '';
+  if (snapshot?.error && ['blocked', 'failed', 'cancelled', 'reboot_required'].includes(phase)) {
+    $('installNote').textContent = snapshot.error.user_message;
+  }
+  $('bootstrapDiagnostics').hidden = !snapshot?.error;
+  $('bootstrapDiagnosticText').textContent = snapshot?.error ? JSON.stringify({
+    diagnostic_id: snapshot.error.diagnostic_id,
+    code: snapshot.error.code,
+    phase: snapshot.error.phase,
+    raw_exit_code: snapshot.error.raw_exit_code,
+    hresult: snapshot.error.hresult,
+    retryable: snapshot.error.retryable,
+    user_message: snapshot.error.user_message,
+    log_path: snapshot.error.log_path,
+    windows: hostProbe ? {
+      caption: hostProbe.windows_caption,
+      version: hostProbe.windows_version,
+      build: hostProbe.windows_build,
+      architecture: hostProbe.architecture,
+      hypervisor_present: hostProbe.hypervisor_present,
+      virtualization_firmware_enabled: hostProbe.virtualization_firmware_enabled,
+      virtual_machine_platform: hostProbe.virtual_machine_platform,
+      wsl_feature: hostProbe.wsl_feature,
+      wsl_cli_available: hostProbe.wsl_cli_available,
+      wsl_package_installed: hostProbe.wsl_package_installed,
+      wsl_version: hostProbe.wsl_version,
+      claude_vm_wsl_version: hostProbe.claude_vm_wsl_version,
+    } : undefined,
+  }, null, 2) : '';
+  $('installWsl').disabled = bootstrapBusy || active;
+  $('selectWslMsi').disabled = bootstrapBusy || active || phase === 'reboot_required';
+  $('installWsl').textContent = phase === 'reboot_required' ? '重启后重新检查' : snapshot?.error?.retryable ? '重试 WSL 配置' : '配置 WSL 2';
+}
 let runtimeInFlight = false;
 let lastGuardState = '';
 const clipboardChannel = 'claude-vm-clipboard';
@@ -498,26 +565,30 @@ async function refreshStatus(manual = false) {
   const generation = statusGeneration;
   try {
     const status = await invoke('runtime_status');
+    const boot = await invoke('bootstrap_snapshot');
+    latestHostProbe = status.host_probe || null;
+    renderBootstrap(boot, latestHostProbe);
     if (generation !== statusGeneration || runtimeInFlight) return;
     $('topDot').classList.toggle('available', status.wsl_available);
     if (!sessionStarted) $('topStatus').textContent = status.wsl_available ? 'WSL 可用' : 'WSL 未就绪';
     $('installWsl').hidden = status.wsl_available;
+    $('selectWslMsi').hidden = status.wsl_available || status.host_probe?.wsl_cli_available !== false;
     const canRestore = !stoppedByUser && status.session_running && status.desktop_available;
     const canStart = status.wsl_available && status.runtime_resources_available && configComplete();
     const needsNode = !canRestore && Boolean(nodeConfigIssue);
     const startButton = $('startRuntime');
     startButton.dataset.action = needsNode ? 'network-settings' : 'start';
     startButton.textContent = needsNode ? '前往网络设置 ↗' : '启动虚拟环境 ↗';
-    startButton.disabled = sessionStarted || (!canRestore && !canStart && !needsNode);
+    startButton.disabled = bootstrapBusy || sessionStarted || (!canRestore && !canStart && !needsNode);
     if (!sessionStarted && !runtimeInFlight) $('stopRuntime').hidden = stoppedByUser || !status.session_running;
-    $('stageTitle').textContent = stoppedByUser ? '环境已停止' : !status.wsl_available ? '需要先启用 WSL2' : status.distro_registered ? '检测到已有虚拟环境' : '准备你的工作空间';
+    $('stageTitle').textContent = stoppedByUser ? '环境已停止' : !status.wsl_available ? '准备 WSL 2 运行环境' : status.distro_registered ? '检测到已有虚拟环境' : '准备你的工作空间';
     $('stageDescription').textContent = canRestore ? '正在检查已有会话的网络保护，确认后将直接进入。'
-      : !status.wsl_available ? 'Windows 家庭版也支持，安装需要管理员授权，可能需要重启。'
+      : !status.wsl_available ? (boot.error?.user_message || '检查并配置 WSL 2。仅在缺少必要组件时才会下载或请求管理员授权。')
       : needsNode ? nodeConfigIssue
       : !status.runtime_resources_available ? '未找到完整的运行时资源，请检查应用目录或使用 npm run dev 启动。'
       : !configComplete() ? '请先完成网络与工作区设置。'
       : '点击启动进入虚拟桌面。';
-    if (!sessionStarted) $('installNote').textContent = '';
+    if (!sessionStarted && !boot.error) $('installNote').textContent = '';
     if (!sessionStarted) showProtection(status.session_running ? 'unknown' : 'idle');
     $('runtimeDetail').textContent = !status.wsl_available ? 'WSL 未就绪，请检查 Windows 功能。'
       : !status.runtime_resources_available ? '运行时资源不完整。'
@@ -649,12 +720,70 @@ window.__TAURI__.event.listen('exit-failed', ({ payload }) => {
   $('topStatus').textContent = '退出未完成';
 }).catch(() => {});
 $('installWsl').addEventListener('click', async () => {
+  if (bootstrapBusy) return;
+  bootstrapBusy = true;
   const button = $('installWsl'); button.disabled = true;
-  $('installNote').textContent = '正在安装，请在 Windows 提示时允许管理员授权。';
-  try { await invoke('install_wsl'); $('installNote').textContent = '安装命令已完成，请按系统提示重启电脑并重新检查。'; }
-  catch (error) { $('installNote').textContent = String(error); }
-  finally { button.disabled = false; }
+  $('selectWslMsi').disabled = true;
+  $('installNote').textContent = '正在检查电脑；只有确实缺少组件时才会下载或请求管理员授权。';
+  $('bootstrapProgress').hidden = true;
+  try {
+    const snapshot = await invoke('bootstrap_start');
+    renderBootstrap(snapshot);
+    if (snapshot.phase === 'reboot_required') $('installNote').textContent = snapshot.error?.user_message || '请重启电脑后重新打开 Claude Haven。';
+    else if (snapshot.phase === 'infrastructure_ready' || snapshot.phase === 'already_ready') $('installNote').textContent = 'WSL 2 已就绪，正在刷新运行环境。';
+    else if (snapshot.error) $('installNote').textContent = snapshot.error.user_message;
+  } catch (error) {
+    try { renderBootstrap(await invoke('bootstrap_snapshot')); } catch (_) {}
+    $('installNote').textContent = bootstrapState?.error?.user_message || String(error);
+  } finally {
+    bootstrapBusy = false;
+    button.disabled = false;
+    if (bootstrapState?.phase === 'infrastructure_ready' || bootstrapState?.phase === 'already_ready') await refreshStatus(true);
+    else await refreshStatus();
+  }
 });
+$('selectWslMsi').addEventListener('click', async () => {
+  if (bootstrapBusy) return;
+  bootstrapBusy = true;
+  $('installWsl').disabled = true;
+  $('selectWslMsi').disabled = true;
+  try {
+    const path = await invoke('bootstrap_select_msi');
+    if (path) {
+      $('installNote').textContent = '已验证本地 WSL 安装包。点击「配置 WSL 2」继续安装。';
+      renderBootstrap(await invoke('bootstrap_snapshot'));
+    }
+  } catch (error) { $('installNote').textContent = String(error); }
+  finally {
+    bootstrapBusy = false;
+    renderBootstrap(bootstrapState);
+  }
+});
+$('cancelBootstrap').addEventListener('click', async () => {
+  $('cancelBootstrap').disabled = true;
+  try { await invoke('bootstrap_cancel'); $('installNote').textContent = '正在停止下载，已完成的数据会保留以便稍后续传。'; }
+  finally { $('cancelBootstrap').disabled = false; }
+});
+$('copyBootstrapDiagnostic').addEventListener('click', async () => {
+  try {
+    await navigator.clipboard.writeText($('bootstrapDiagnosticText').textContent);
+    $('copyBootstrapDiagnostic').textContent = '已复制';
+    setTimeout(() => { $('copyBootstrapDiagnostic').textContent = '复制诊断信息'; }, 1600);
+  } catch (_) { $('installNote').textContent = '无法写入剪贴板，请手动复制诊断信息。'; }
+});
+window.__TAURI__.event.listen('bootstrap-progress', ({ payload }) => {
+  renderBootstrap(payload);
+  const stages = {
+    probing: '正在检查 Windows 与 WSL 能力…',
+    downloading: '正在从微软官方下载 WSL…',
+    verifying: '正在校验安装包大小、哈希与签名…',
+    awaiting_elevation: '即将请求一次管理员授权…',
+    enabling_features: '正在启用 VirtualMachinePlatform…',
+    installing_msi: '正在安装 WSL 运行引擎…',
+    rechecking: '正在重新检查 WSL 2…',
+  };
+  if (stages[payload.phase]) $('installNote').textContent = stages[payload.phase];
+}).catch(() => {});
 $('openReset').addEventListener('click', () => {
   $('resetPhrase').value = '';
   $('confirmReset').disabled = true;

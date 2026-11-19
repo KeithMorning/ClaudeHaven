@@ -1,10 +1,10 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod bootstrap;
 mod runtime;
 
 use serde::{Deserialize, Serialize};
 use std::path::Path;
-use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{Emitter, Manager};
 
@@ -151,7 +151,9 @@ fn validate_exit_node(config: &WorkspaceConfig) -> Result<(), String> {
     }
     let names = node_names(Path::new(&config.yaml_path))?;
     if !names.contains(&config.node) {
-        return Err("保存的出口节点已不在当前配置文件中。请在「网络设置」重新选择节点并保存。".into());
+        return Err(
+            "保存的出口节点已不在当前配置文件中。请在「网络设置」重新选择节点并保存。".into(),
+        );
     }
     Ok(())
 }
@@ -197,10 +199,7 @@ fn tcp_latency(host: &str, port: u16, attempts: u8) -> Option<u64> {
 }
 
 #[tauri::command]
-async fn node_latency(
-    path: String,
-    node: Option<String>,
-) -> Result<Vec<NodeLatency>, String> {
+async fn node_latency(path: String, node: Option<String>) -> Result<Vec<NodeLatency>, String> {
     let wanted = node.filter(|name| !name.is_empty());
     tauri::async_runtime::spawn_blocking(move || {
         let data = std::fs::read(&path).map_err(|e| format!("无法读取配置文件：{e}"))?;
@@ -394,24 +393,26 @@ async fn start_runtime(app: tauri::AppHandle) -> Result<LaunchOutcome, String> {
         let resources = runtime_root(&app)?;
         tauri::async_runtime::spawn_blocking(move || {
             let _lock = lock;
+            let _bootstrap_lock = bootstrap::controller::lock_for_runtime(&app)?;
             let mut operations = runtime::WslLaunch::new(config, directory, resources);
             match runtime::launch_with_progress(&mut operations, |stage| {
                 let _ = app.emit("startup-progress", stage);
             }) {
-                Ok(()) => LaunchOutcome {
-                    ok: true,
-                    needs_stop: false,
-                    error: String::new(),
-                },
-                Err(error) => LaunchOutcome {
-                    ok: false,
-                    needs_stop: operations.was_spawned(),
-                    error,
-                },
+                Ok(()) => {
+                    if let Some(path) = wsl_ready_marker(&app) {
+                        if let Some(parent) = path.parent() { let _ = std::fs::create_dir_all(parent); }
+                        let _ = std::fs::write(path, b"verified");
+                    }
+                    Ok(LaunchOutcome { ok: true, needs_stop: false, error: String::new() })
+                }
+                Err(error) => {
+                    if let Some(path) = wsl_ready_marker(&app) { let _ = std::fs::remove_file(path); }
+                    Ok(LaunchOutcome { ok: false, needs_stop: operations.was_spawned(), error })
+                }
             }
         })
         .await
-        .map_err(|e| format!("启动操作中断：{e}"))
+        .map_err(|e| format!("启动操作中断：{e}"))?
     }
     #[cfg(not(windows))]
     {
@@ -589,10 +590,13 @@ async fn reset_system(confirmation: String) -> Result<(), String> {
         tauri::async_runtime::spawn_blocking(move || {
             let _lock = lock;
             runtime::shutdown(&mut runtime::WslStop)?;
-            let registered = wsl(&["--list", "--quiet"])
+            let registered = runtime::run_wsl(&["--list", "--quiet"])
                 .map_err(|e| format!("无法检查虚拟环境：{e}"))?;
             if !registered.status.success() {
-                return Err(format!("无法检查虚拟环境：{}", runtime::output_text(&registered)));
+                return Err(format!(
+                    "无法检查虚拟环境：{}",
+                    runtime::output_text(&registered)
+                ));
             }
             if !runtime::output_text(&registered)
                 .lines()
@@ -600,12 +604,15 @@ async fn reset_system(confirmation: String) -> Result<(), String> {
             {
                 return Ok(());
             }
-            let output = wsl(&["--unregister", "claude-vm"])
+            let output = runtime::run_wsl(&["--unregister", "claude-vm"])
                 .map_err(|e| format!("无法删除虚拟环境：{e}"))?;
             if output.status.success() {
                 Ok(())
             } else {
-                Err(format!("删除虚拟环境失败：{}", runtime::output_text(&output)))
+                Err(format!(
+                    "删除虚拟环境失败：{}",
+                    runtime::output_text(&output)
+                ))
             }
         })
         .await
@@ -622,34 +629,37 @@ struct RuntimeStatus {
     session_running: bool,
     desktop_available: bool,
     runtime_resources_available: bool,
+    host_probe: Option<bootstrap::probe::HostProbe>,
 }
 
 #[cfg(windows)]
-fn wsl(args: &[&str]) -> std::io::Result<std::process::Output> {
-    use std::os::windows::process::CommandExt;
-    Command::new("wsl.exe")
-        .args(args)
-        .creation_flags(0x08000000)
-        .output()
+fn wsl_ready_marker(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
+    app.path().app_data_dir().ok().map(|p| p.join("bootstrap").join("runtime-verified-v1"))
 }
 
 #[tauri::command]
 async fn runtime_status(app: tauri::AppHandle) -> RuntimeStatus {
     #[cfg(windows)]
     {
-        let status = wsl(&["--status"])
-            .map(|o| o.status.success())
-            .unwrap_or(false);
-        let registered = wsl(&["--list", "--quiet"])
+        let previous_bootstrap = bootstrap::controller::snapshot(&app);
+        let cached_registered = if !previous_bootstrap.reboot_required
+            && wsl_ready_marker(&app).is_some_and(|p| p.is_file()) {
+            runtime::run_wsl(&["--list", "--quiet"]).ok().filter(|o| o.status.success())
+                .map(|o| runtime::output_text(&o).lines().any(|line| line.trim().eq_ignore_ascii_case("claude-vm")))
+                .unwrap_or(false)
+        } else { false };
+        let host = if cached_registered { None } else { bootstrap::probe::probe_host().ok() };
+        if let Some(probe) = host.as_ref() {
+            let _ = bootstrap::controller::resume_after_reboot(&app, probe);
+        }
+        let registered = cached_registered || host
+            .as_ref()
+            .is_some_and(|probe| probe.distro("claude-vm").is_some());
+        let status = !previous_bootstrap.reboot_required
+            && (cached_registered || host.as_ref().is_some_and(|probe| probe.can_initialize()));
+        let session_running = runtime::run_wsl(&["--list", "--running", "--quiet"])
             .map(|o| {
-                let text = String::from_utf8_lossy(&o.stdout).replace('\0', "");
-                text.lines()
-                    .any(|line| line.trim().eq_ignore_ascii_case("claude-vm"))
-            })
-            .unwrap_or(false);
-        let session_running = wsl(&["--list", "--running", "--quiet"])
-            .map(|o| {
-                let text = String::from_utf8_lossy(&o.stdout).replace('\0', "");
+                let text = bootstrap::decode_windows_output(&o.stdout);
                 text.lines()
                     .any(|line| line.trim().eq_ignore_ascii_case("claude-vm"))
             })
@@ -670,6 +680,7 @@ async fn runtime_status(app: tauri::AppHandle) -> RuntimeStatus {
             session_running,
             desktop_available: desktop,
             runtime_resources_available: ready,
+            host_probe: host,
         }
     }
     #[cfg(not(windows))]
@@ -681,24 +692,57 @@ async fn runtime_status(app: tauri::AppHandle) -> RuntimeStatus {
             session_running: false,
             desktop_available: false,
             runtime_resources_available: false,
+            host_probe: None,
         }
     }
 }
 
 #[tauri::command]
-async fn install_wsl() -> Result<(), String> {
+async fn bootstrap_status(app: tauri::AppHandle) -> bootstrap::controller::BootstrapStatus {
     #[cfg(windows)]
     {
-        tauri::async_runtime::spawn_blocking(|| {
-            use std::os::windows::process::CommandExt;
-            let script = "$ErrorActionPreference='Stop'; try { $p=Start-Process -FilePath (Join-Path $env:SystemRoot 'System32\\wsl.exe') -ArgumentList '--install','--no-distribution' -Verb RunAs -WindowStyle Hidden -Wait -PassThru; if ($p.ExitCode -in 0,3010,1641) { exit 0 }; exit 1 } catch { exit 1 }";
-            let status = Command::new("powershell.exe").args(["-NoProfile", "-NonInteractive", "-Command", script])
-                .creation_flags(0x08000000).status().map_err(|e| format!("无法启动安装：{e}"))?;
-            if status.success() { Ok(()) } else { Err("安装未完成，请确认已允许管理员授权并检查系统和网络。".into()) }
-        }).await.map_err(|e| format!("安装中断：{e}"))?
+        tauri::async_runtime::spawn_blocking(move || bootstrap::controller::status(&app))
+            .await
+            .unwrap_or_else(|error| bootstrap::controller::status_error(error.to_string()))
     }
     #[cfg(not(windows))]
-    Err("当前仅支持 Windows。".into())
+    {
+        let _ = app;
+        bootstrap::controller::status_error("当前仅支持 Windows。".into())
+    }
+}
+
+#[tauri::command]
+fn bootstrap_snapshot(app: tauri::AppHandle) -> bootstrap::state::BootstrapSnapshot {
+    bootstrap::controller::snapshot(&app)
+}
+
+#[tauri::command]
+async fn bootstrap_start(
+    app: tauri::AppHandle,
+) -> Result<bootstrap::state::BootstrapSnapshot, String> {
+    tauri::async_runtime::spawn_blocking(move || bootstrap::controller::start(app))
+        .await
+        .map_err(|error| format!("初始化任务中断：{error}"))?
+}
+
+#[tauri::command]
+async fn bootstrap_retry(
+    app: tauri::AppHandle,
+) -> Result<bootstrap::state::BootstrapSnapshot, String> {
+    bootstrap_start(app).await
+}
+
+#[tauri::command]
+fn bootstrap_cancel() {
+    bootstrap::controller::cancel();
+}
+
+#[tauri::command]
+async fn bootstrap_select_msi(app: tauri::AppHandle) -> Result<Option<std::path::PathBuf>, String> {
+    tauri::async_runtime::spawn_blocking(move || bootstrap::controller::select_msi(&app))
+        .await
+        .map_err(|error| format!("选择安装包的任务已中断：{error}"))?
 }
 
 fn main() {
@@ -743,7 +787,12 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             runtime_status,
-            install_wsl,
+            bootstrap_status,
+            bootstrap_snapshot,
+            bootstrap_start,
+            bootstrap_retry,
+            bootstrap_cancel,
+            bootstrap_select_msi,
             load_config,
             save_config,
             inspect_config,

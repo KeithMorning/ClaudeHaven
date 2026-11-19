@@ -13,7 +13,7 @@
     "active": true,
     "targets": ["nsis"],
     "icon": ["icons/icon.ico"],
-    "windows": { "nsis": { "compression": "none" } },
+    "windows": { "nsis": { "compression": "none", "installerIcon": "icons/icon.ico", "uninstallerIcon": "icons/icon.ico" } },
     "resources": {
       "../runtime/rootfs.tar.gz": "runtime/rootfs.tar.gz",
       "../runtime/scripts/": "runtime/scripts/",

@@ -28,9 +28,9 @@ Claude Haven 是一个面向 Claude Code 的 Windows 桌面工作台。它在 WS
 
 从 [GitHub Releases](https://github.com/KeithMorning/ClaudeVM/releases/latest) 下载 Windows 安装包并按提示安装。安装包已包含 Linux 运行时，日常使用不需要另外安装 Node.js、Rust、Docker，也不用手动准备 Linux 镜像。
 
-首次启动时，Claude Haven 会检查并准备 WSL2 环境；如果系统尚未启用 WSL，应用会引导安装并请求管理员授权，部分电脑需要重启一次。随后在「系统设置」中选择 Clash / Mihomo 配置和出口节点，在「工作区」中选择要共享的文件夹，就可以启动虚拟桌面。
+首次启动会先检查 WSL 2。电脑已有可用 WSL 2 时直接复用，不重复下载；缺少 WSL 运行引擎时，应用从微软官方地址下载并校验安装包。只有确实需要启用 Windows 组件时才会请求一次管理员授权，部分电脑需要重启后继续。离线电脑也可选择本地的受支持 WSL 安装包恢复。
 
-整个流程由应用引导完成，无需打开命令行。网络配置和 WSL2 是首次使用时需要完成的两项准备。
+安装引导由应用显示实际下载进度、校验结果和可复制诊断信息，不需要用户打开命令行。WSL 2 初始化完成后，在「系统设置」中选择 Clash / Mihomo 配置与出口节点，再在「工作区」选择共享文件夹，即可启动虚拟桌面。首次使用需要网络配置；WSL 组件只在电脑尚未具备运行条件时安装。
 
 ## 核心体验
 
@@ -107,6 +107,8 @@ npm run build
 | Mihomo / TUN 网络保护与启动出口检查 | 已实现，检查边界见上文 |
 | macOS / Linux 原生桌面应用 | 暂不支持 |
 | 正式代码签名与自动更新 | 尚未提供 |
+
+WSL 引导目前以 Windows x64 为目标，最低系统版本按微软当前 WSL 安装文档设置为 Windows 10 build 19041；该版本下限和离线安装步骤尚待干净 Windows 实机完整验证，详见 [WSL 引导验证记录](docs/wsl-bootstrap-validation.md)。
 
 ## 项目结构
 
