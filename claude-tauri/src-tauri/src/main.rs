@@ -621,6 +621,8 @@ async fn restore_session(app: tauri::AppHandle) -> Result<(), String> {
             if !recovery_checks_pass(&report) {
                 return Err("已有会话的网络保护或出口地区尚未通过检查，请核对网络后重试。".into());
             }
+            let config = load_config(app.clone())?;
+            runtime::sync_workspace(Path::new(&config.workspace))?;
             Ok(())
         })
         .await

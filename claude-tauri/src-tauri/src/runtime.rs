@@ -285,7 +285,34 @@ fn guest_script(script: &str) -> Result<String, String> {
     Ok(output_text(&result))
 }
 
-fn parse_guard_state(raw: &str, now: u64) -> Result<String, String> {
+#[cfg(windows)]
+pub(crate) fn sync_workspace(path: &Path) -> Result<(), String> {
+    let workspace = guest_path(path)?;
+    guest_script(&format!(
+        r#"set -eu
+workspace={}
+if [ ! -d "$workspace" ]; then
+    printf '%s\n' 'WSL 无法访问所选文件夹，请检查磁盘挂载或重新选择工作区。' >&2
+    exit 1
+fi
+if [ -e /workspace ] && [ ! -L /workspace ]; then
+    if ! rmdir -- /workspace; then
+        printf '%s\n' '虚拟机内的 /workspace 已存有数据或被占用。请先备份，处理后再启动。' >&2
+        exit 1
+    fi
+fi
+if [ ! -L /workspace ] || [ "$(readlink -- /workspace)" != "$workspace" ]; then
+    ln -sfnT -- "$workspace" /workspace
+fi
+[ "$(readlink -- /workspace)" = "$workspace" ]
+"#,
+        shell_quote(&workspace)
+    ))
+    .map(|_| ())
+    .map_err(|error| format!("无法连接共享工作区：{error}"))
+}
+
+pub(crate) fn parse_guard_state(raw: &str, now: u64) -> Result<String, String> {
     let value = |key: &str| {
         raw.lines()
             .find_map(|line| line.trim().strip_prefix(key))
@@ -365,7 +392,7 @@ fn read_guard_report() -> Result<(String, String), String> {
     Ok((state, raw))
 }
 
-fn protection_prerequisites_met(status: &serde_json::Value) -> bool {
+pub(crate) fn protection_prerequisites_met(status: &serde_json::Value) -> bool {
     status.get("locked").and_then(|v| v.as_bool()) == Some(true)
         && status.get("ipv6_disabled").and_then(|v| v.as_bool()) == Some(true)
 }
@@ -630,6 +657,8 @@ impl LaunchOperations for WslLaunch {
 
     fn spawn_entrypoint(&mut self) -> Result<(), String> {
         use std::process::{Command, Stdio};
+        sync_workspace(Path::new(&self.config.workspace))?;
+
         let (lang, chrome) = match self.config.language {
             crate::EnvironmentLanguage::English => ("en_US.UTF-8", "en-US"),
             crate::EnvironmentLanguage::SimplifiedChinese => ("zh_CN.UTF-8", "zh-CN"),
@@ -641,10 +670,6 @@ impl LaunchOperations for WslLaunch {
             format!("LC_ALL={lang}"),
             format!("CHROME_LANG={chrome}"),
             format!("TUN_NODE={}", self.config.node),
-            format!(
-                "WORKSPACE={}",
-                guest_path(Path::new(&self.config.workspace))?
-            ),
             "NET_GUARD=strict".into(),
             "NET_GUARD_STRICT_REGION=1".into(),
             "INPUT_METHOD=rime".into(),

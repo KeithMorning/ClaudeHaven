@@ -9,18 +9,20 @@ report_startup() {
 }
 report_startup network
 
-# 0) Node / Claude Code 可执行路径（WSL 导入后不继承镜像 ENV，这里显式补上）
-export PATH="/usr/local/lib/nodejs/node-v20.18.1-linux-x64/bin:$PATH"
+# WSL 导入后不继承镜像 ENV。Node 和 Claude Code 的入口统一在 /usr/local/bin。
+export PATH="/usr/local/bin:$PATH"
+if ! command -v claude >/dev/null 2>&1; then
+  _claude_bin="$(npm prefix -g 2>/dev/null || true)/bin/claude"
+  if [ -x "$_claude_bin" ]; then
+    ln -sf "$_claude_bin" /usr/local/bin/claude
+  fi
+fi
 
 # XDG_RUNTIME_DIR：WSL 的默认运行时目录属主是 uid 1000，而本会话以 root 运行 ——
 # 属主不匹配会让 GTK3 应用卡死在初始化（进程活着、窗口永远不出现、无任何报错）。
 # 换成 root 自己的运行时目录，GTK 应用立刻正常。2.0 只走串流桌面，但这条仍必须保留。
 export XDG_RUNTIME_DIR=/tmp/claude-vm-runtime
 mkdir -p "$XDG_RUNTIME_DIR" && chmod 700 "$XDG_RUNTIME_DIR"
-if [ ! -e /usr/local/bin/claude ] && [ -x /usr/local/lib/nodejs/node-v20.18.1-linux-x64/bin/claude ]; then
-  ln -sf /usr/local/lib/nodejs/node-v20.18.1-linux-x64/bin/claude /usr/local/bin/claude 2>/dev/null || true
-fi
-
 # WSL 可能在启动早期同步宿主时区。设置需要在桌面进程继承 TZ 前完成。
 apply_tz() {
   [ -n "${TZ:-}" ] || return 0

@@ -1,6 +1,7 @@
 FROM ubuntu:22.04
 
 ENV DEBIAN_FRONTEND=noninteractive
+ARG TARGETARCH
 
 # 国内 apt 镜像（加速；如需官方源可删掉这一行）
 RUN sed -i -E 's@https?://(archive|security)\.ubuntu\.com@http://mirrors.ustc.edu.cn@g' /etc/apt/sources.list
@@ -30,35 +31,40 @@ RUN sed -i -E 's/^# *((en_US|en_GB|ja_JP|de_DE)\.UTF-8)/\1/' /etc/locale.gen \
 RUN printf '[automount]\nenabled = true\nroot = /mnt/\noptions = "metadata,umask=22,fmask=11"\n\n[interop]\nenabled = true\nappendWindowsPath = false\n' > /etc/wsl.conf
 
 # Node.js 20（npmmirror 国内镜像，避免 nodesource 慢）
-RUN aria2c -x8 -s8 -q -d /tmp -o node.tar.xz https://npmmirror.com/mirrors/node/v20.18.1/node-v20.18.1-linux-x64.tar.xz \
+RUN set -eu; \
+    case "$TARGETARCH" in amd64) node_arch=x64 ;; arm64) node_arch=arm64 ;; *) exit 1 ;; esac; \
+    node_dist="node-v20.18.1-linux-$node_arch"; \
+    aria2c -x8 -s8 -q -d /tmp -o node.tar.xz "https://npmmirror.com/mirrors/node/v20.18.1/$node_dist.tar.xz" \
     && mkdir -p /usr/local/lib/nodejs \
     && tar -xJf /tmp/node.tar.xz -C /usr/local/lib/nodejs \
-    && ln -sf /usr/local/lib/nodejs/node-v20.18.1-linux-x64/bin/node /usr/local/bin/node \
-    && ln -sf /usr/local/lib/nodejs/node-v20.18.1-linux-x64/bin/npm /usr/local/bin/npm \
-    && ln -sf /usr/local/lib/nodejs/node-v20.18.1-linux-x64/bin/npx /usr/local/bin/npx \
+    && ln -sf "/usr/local/lib/nodejs/$node_dist/bin/node" /usr/local/bin/node \
+    && ln -sf "/usr/local/lib/nodejs/$node_dist/bin/npm" /usr/local/bin/npm \
+    && ln -sf "/usr/local/lib/nodejs/$node_dist/bin/npx" /usr/local/bin/npx \
     && rm -f /tmp/node.tar.xz \
-    && node -v && npm -v
+    && test "$(node -p 'process.arch')" = "$node_arch" && npm -v
 
 # Google Chrome（真实 UA，用于容器内 claude.ai 登录）
-RUN aria2c -x16 -s16 -k1M -q -d /tmp -o chrome.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb \
+RUN aria2c -x16 -s16 -k1M -q -d /tmp -o chrome.deb "https://dl.google.com/linux/direct/google-chrome-stable_current_${TARGETARCH}.deb" \
+    && test "$(dpkg-deb -f /tmp/chrome.deb Architecture)" = "$TARGETARCH" \
     && apt-get update \
     && apt-get install -y /tmp/chrome.deb \
+    && google-chrome-stable --version \
     && rm -f /tmp/chrome.deb \
     && rm -rf /var/lib/apt/lists/*
 
 # Claude Code CLI（官方包，走 npmmirror 镜像）
 # 装完立刻清干净：npm 更新失败会留下 @anthropic-ai/.claude-code-XXXXXXXX 暂存目录，
 # node 头文件和 npm 缓存同样只在构建时有用。
-# 注意：包里的 bin/claude.exe 就是 ~245MB 的原生二进制本体（后缀虽叫 .exe），
-#       千万别按后缀删它，否则入口就断了。
 RUN npm config set registry https://registry.npmmirror.com \
     && npm install -g @anthropic-ai/claude-code \
+    && claude_bin="$(npm prefix -g)/bin/claude" \
+    && if [ "$claude_bin" != /usr/local/bin/claude ]; then ln -sf "$claude_bin" /usr/local/bin/claude; fi \
+    && claude --version \
     && rm -rf /usr/local/lib/nodejs/*/lib/node_modules/@anthropic-ai/.claude-code-* \
     && rm -rf /usr/local/lib/nodejs/*/include \
     && npm cache clean --force \
     && rm -rf /root/.npm /root/.cache \
-    && rm -rf /usr/share/doc/* \
-    && ls -l /usr/local/lib/nodejs/*/lib/node_modules/@anthropic-ai/claude-code/bin/claude.exe
+    && rm -rf /usr/share/doc/*
 
 # ---------------------------------------------------------------------------
 # 模块一：容器内自带代理内核（mihomo）+ TUN 全局接管
@@ -67,21 +73,17 @@ RUN npm config set registry https://registry.npmmirror.com \
 #     若启动时才去下载 MMDB，就会撞上「DNS 已指向自己但还没监听」的死锁
 #     （2026-11-16 spike 实测踩到：can't download MMDB: dns resolve failed）。
 #   · iproute2 只为排障方便；实际加 /32 主机路由复用 net-guard.py 的 AF_NETLINK。
-#   · TARGETARCH 由 buildx 注入，**内核二进制**按 amd64 / arm64 取。
-#     注意：rootfs 其余部分（apt 源、Node、Chrome、PATH）目前仍是 amd64 写死；
-#     完整 arm64 支持是另一轮工作（ubuntu-ports 源 + Node/Chrome arm64 + PATH
-#     归一化 + entrypoint 的 PATH 兼容），别以为改了这一行 Mac 就能直接跑。
+#   · 内核二进制按 Buildx 提供的目标架构选择。
 # ---------------------------------------------------------------------------
-ARG TARGETARCH=amd64
 RUN apt-get update && apt-get install -y --no-install-recommends gzip iproute2 \
     && rm -rf /var/lib/apt/lists/*
 RUN set -eu; \
-    case "$TARGETARCH" in arm64) A=arm64 ;; *) A=amd64 ;; esac; \
+    case "$TARGETARCH" in amd64) A=amd64-compatible ;; arm64) A=arm64 ;; *) exit 1 ;; esac; \
     V=v1.19.34; \
     aria2c -x8 -s8 -q -d /tmp -o mihomo.gz \
       "https://github.com/MetaCubeX/mihomo/releases/download/$V/mihomo-linux-$A-$V.gz"; \
-    gzip -d /tmp/mihomo.gz; \
-    mv "/tmp/mihomo-linux-$A-$V" /usr/local/bin/mihomo; \
+    gzip -dc /tmp/mihomo.gz > /usr/local/bin/mihomo; \
+    rm -f /tmp/mihomo.gz; \
     chmod 755 /usr/local/bin/mihomo; \
     mkdir -p /opt/mihomo; \
     aria2c -x8 -s8 -q -d /opt/mihomo -o geoip.metadb \
@@ -102,7 +104,6 @@ ENV TZ=America/New_York
 ENV LANG=en_US.UTF-8
 ENV LC_ALL=en_US.UTF-8
 ENV LANGUAGE=en_US:en
-ENV PATH=/usr/local/lib/nodejs/node-v20.18.1-linux-x64/bin:$PATH
 
 EXPOSE 6080 5901 7890
 ENTRYPOINT ["/opt/scripts/entrypoint.sh"]
