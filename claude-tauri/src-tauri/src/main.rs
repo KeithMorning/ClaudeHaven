@@ -125,7 +125,34 @@ fn save_config(app: tauri::AppHandle, config: WorkspaceConfig) -> Result<(), Str
     let bytes = serde_json::to_vec_pretty(&config).map_err(|e| e.to_string())?;
     let temporary = path.with_extension("json.tmp");
     std::fs::write(&temporary, bytes).map_err(|e| format!("保存配置失败：{e}"))?;
-    std::fs::rename(&temporary, &path).map_err(|e| format!("保存配置失败：{e}"))
+    replace_config_file(&temporary, &path)
+}
+
+#[cfg(windows)]
+fn replace_config_file(temporary: &Path, destination: &Path) -> Result<(), String> {
+    use std::os::windows::ffi::OsStrExt;
+    let source: Vec<u16> = temporary.as_os_str().encode_wide().chain(Some(0)).collect();
+    let target: Vec<u16> = destination.as_os_str().encode_wide().chain(Some(0)).collect();
+    let replaced = unsafe {
+        windows_sys::Win32::Storage::FileSystem::MoveFileExW(
+            source.as_ptr(),
+            target.as_ptr(),
+            windows_sys::Win32::Storage::FileSystem::MOVEFILE_REPLACE_EXISTING
+                | windows_sys::Win32::Storage::FileSystem::MOVEFILE_WRITE_THROUGH,
+        )
+    };
+    if replaced == 0 {
+        let error = std::io::Error::last_os_error();
+        let _ = std::fs::remove_file(temporary);
+        Err(format!("保存配置失败：{error}"))
+    } else {
+        Ok(())
+    }
+}
+
+#[cfg(not(windows))]
+fn replace_config_file(temporary: &Path, destination: &Path) -> Result<(), String> {
+    std::fs::rename(temporary, destination).map_err(|e| format!("保存配置失败：{e}"))
 }
 
 fn node_names(path: &Path) -> Result<Vec<String>, String> {
