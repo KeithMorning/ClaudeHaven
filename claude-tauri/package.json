@@ -4,8 +4,8 @@
   "private": true,
   "scripts": {
     "sync-runtime": "node scripts/sync-runtime.js",
-    "dev": "npm run sync-runtime && tauri dev",
-    "build": "npm run sync-runtime && tauri build",
+    "dev": "node scripts/run-tauri.js dev",
+    "build": "node scripts/run-tauri.js build",
     "test": "cargo test --manifest-path src-tauri/Cargo.toml"
   },
   "devDependencies": {

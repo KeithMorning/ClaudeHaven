@@ -11,6 +11,7 @@ docs/tmp
 
 # 运行时镜像（650MB，不进版本库；用 build-rootfs.sh 生成或单独传递）
 claude-tauri/runtime/rootfs.tar.gz
+claude-tauri/runtime/rootfs-linux-arm64.tar.gz
 claude-tauri/runtime/rootfs-slim.tar.gz
 
 # sync-scripts 生成的副本（真源在 claude-vm/vm/）

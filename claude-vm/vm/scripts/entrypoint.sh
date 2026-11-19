@@ -1,17 +1,20 @@
 #!/usr/bin/env bash
 set -e
 
-# 0) Node / Claude Code 可执行路径（WSL 导入后不继承镜像 ENV，这里显式补上）
-export PATH="/usr/local/lib/nodejs/node-v20.18.1-linux-x64/bin:$PATH"
+# WSL 导入后不继承镜像 ENV。Node 和 Claude Code 的入口统一在 /usr/local/bin。
+export PATH="/usr/local/bin:$PATH"
+if ! command -v claude >/dev/null 2>&1; then
+  _claude_bin="$(npm prefix -g 2>/dev/null || true)/bin/claude"
+  if [ -x "$_claude_bin" ]; then
+    ln -sf "$_claude_bin" /usr/local/bin/claude
+  fi
+fi
 
 # XDG_RUNTIME_DIR：WSL 的默认运行时目录属主是 uid 1000，而本会话以 root 运行 ——
 # 属主不匹配会让 GTK3 应用卡死在初始化（进程活着、窗口永远不出现、无任何报错）。
 # 换成 root 自己的运行时目录，GTK 应用立刻正常。2.0 只走串流桌面，但这条仍必须保留。
 export XDG_RUNTIME_DIR=/tmp/claude-vm-runtime
 mkdir -p "$XDG_RUNTIME_DIR" && chmod 700 "$XDG_RUNTIME_DIR"
-if [ ! -e /usr/local/bin/claude ] && [ -x /usr/local/lib/nodejs/node-v20.18.1-linux-x64/bin/claude ]; then
-  ln -sf /usr/local/lib/nodejs/node-v20.18.1-linux-x64/bin/claude /usr/local/bin/claude 2>/dev/null || true
-fi
 
 # WSL 可能在启动早期同步宿主时区。设置需要在桌面进程继承 TZ 前完成。
 apply_tz() {
@@ -132,10 +135,7 @@ zone_path=$(readlink -f "/usr/share/zoneinfo/$TZ")
 printf 'active_timezone=%s\ntimezone_source=%s\n' "${zone_path#/usr/share/zoneinfo/}" "$timezone_source" > /run/claude-vm/session-timezone.tmp
 mv -f /run/claude-vm/session-timezone.tmp /run/claude-vm/session-timezone
 
-# 2.5) 工作区：WSL 已 automount Windows 盘符，把宿主工作区软链到 /workspace
-if [ -n "$WORKSPACE" ] && [ -d "$WORKSPACE" ] && [ ! -e /workspace ]; then
-  ln -sfn "$WORKSPACE" /workspace || true
-fi
+# 2.5) WSL 启动器已设置共享目录；镜像单独运行时保留本地工作区。
 mkdir -p /workspace
 
 # 2.6) Chrome 策略：堵住两条「不走内核」的旁路
@@ -377,10 +377,14 @@ fi
 #      但它的自更新只要中断一次，就会把整包换成「500 字节报错桩 + 残片」，
 #      表现为终端里敲 claude 报 command not found 或 Bus error，且没有任何提示。
 #      这里两种布局都认，每次启动都验一遍。
-_cb_dir="$(ls -d /usr/local/lib/nodejs/*/lib/node_modules/@anthropic-ai/claude-code 2>/dev/null | head -1)"
-if [ -n "$_cb_dir" ]; then
+_cb_prefix="$(npm root -g 2>/dev/null || true)"
+if [ -n "$_cb_prefix" ]; then
+  _cb_dir="$_cb_prefix/@anthropic-ai/claude-code"
+  _cb_arch="$(node -p 'process.arch')"
+  _cb_package="@anthropic-ai/claude-code-linux-$_cb_arch"
   for _cand in "$_cb_dir/bin/claude.exe" \
-               "$_cb_dir/node_modules/@anthropic-ai/claude-code-linux-x64/claude"; do
+               "$_cb_dir/node_modules/$_cb_package/claude" \
+               "$_cb_prefix/$_cb_package/claude"; do
     [ -f "$_cand" ] || continue
     chmod +x "$_cand" 2>/dev/null || true
     ln -sf "$_cand" /usr/local/bin/claude

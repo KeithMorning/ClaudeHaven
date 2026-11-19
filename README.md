@@ -105,7 +105,8 @@ npm run build
 | WSL2 Linux 虚拟桌面 | 支持，仍在验证不同 Windows 环境 |
 | 中文输入、双向文本剪贴板、共享文件夹 | 已实现 |
 | Mihomo / TUN 网络保护与启动出口检查 | 已实现，检查边界见上文 |
-| macOS / Linux 原生桌面应用 | 暂不支持 |
+| macOS | [Lima 开发模式](claude-tauri/README.md#macos-开发模式)，待实机验证 |
+| Linux 原生桌面应用 | 暂不支持 |
 | 正式代码签名与自动更新 | 尚未提供 |
 
 WSL 引导目前以 Windows x64 为目标，最低系统版本按微软当前 WSL 安装文档设置为 Windows 10 build 19041；该版本下限和离线安装步骤尚待干净 Windows 实机完整验证，详见 [WSL 引导验证记录](docs/wsl-bootstrap-validation.md)。

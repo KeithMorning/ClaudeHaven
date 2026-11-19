@@ -365,8 +365,8 @@ async function save(message, nextConfig = config) {
         switchPage('home');
       }
     }
-    $(message).textContent = message === 'environmentMessage'
-      ? '设置已保存，重启虚拟环境后生效。'
+    $(message).textContent = message === 'environmentMessage' || message === 'workspaceMessage'
+      ? '设置已保存，下次启动虚拟环境时生效。'
       : '设置已保存。';
     if (!sessionStarted) void refreshStatus();
   }
@@ -395,10 +395,18 @@ $('saveNetwork').addEventListener('click', () => {
   void save('networkMessage', { ...config, yaml_path, node });
 });
 $('chooseWorkspace').addEventListener('click', async () => {
-  try { const path = await invoke('choose_workspace'); if (path) { config.workspace = path; $('workspacePath').value = path; } }
+  try {
+    const path = await invoke('choose_workspace');
+    if (path) {
+      $('workspacePath').value = path;
+      $('workspaceMessage').textContent = '请保存设置，下次启动虚拟环境时将使用此文件夹。';
+    }
+  }
   catch (error) { $('workspaceMessage').textContent = String(error); }
 });
-$('saveWorkspace').addEventListener('click', () => { void save('workspaceMessage'); });
+$('saveWorkspace').addEventListener('click', () => {
+  void save('workspaceMessage', { ...config, workspace: $('workspacePath').value });
+});
 $('saveEnvironment').addEventListener('click', () => {
   void save('environmentMessage', {
     ...config,
@@ -579,8 +587,8 @@ async function startSession() {
 
 function triggerAutoStart(status, manual) {
   if (stoppedByUser || autoStartDone || sessionStarted || runtimeInFlight) return;
-  if (!status || !status.wsl_available || !status.runtime_resources_available) return;
-  if ((!status.distro_registered && !manual) || !configComplete()) return;
+  if (!status || !status.runtime_available || !status.runtime_resources_available) return;
+  if ((!status.environment_exists && !manual) || !configComplete()) return;
   return startSession();
 }
 
@@ -591,34 +599,38 @@ async function refreshStatus(manual = false) {
   const generation = statusGeneration;
   try {
     const status = await invoke('runtime_status');
-    const boot = await invoke('bootstrap_snapshot');
+    const isMac = status.platform === 'macos';
+    const boot = isMac ? {} : await invoke('bootstrap_snapshot');
     latestHostProbe = status.host_probe || null;
     renderBootstrap(boot, latestHostProbe);
     if (generation !== statusGeneration || runtimeInFlight) return;
-    $('topDot').classList.toggle('available', status.wsl_available);
-    if (!sessionStarted) $('topStatus').textContent = status.wsl_available ? 'WSL 可用' : 'WSL 未就绪';
-    $('installWsl').hidden = status.wsl_available;
-    $('selectWslMsi').hidden = status.wsl_available || status.host_probe?.wsl_cli_available !== false;
+    $('topDot').classList.toggle('available', status.runtime_available);
+    const engine = isMac ? 'Mac 虚拟化' : 'WSL';
+    if (!sessionStarted) $('topStatus').textContent = status.runtime_available ? `${engine} 可用` : `${engine} 未就绪`;
+    $('installWsl').hidden = isMac || status.runtime_available;
+    $('selectWslMsi').hidden = isMac || status.runtime_available || status.host_probe?.wsl_cli_available !== false;
+    if (isMac) $('openReset').closest('.settings-card').hidden = true;
     const canRestore = !stoppedByUser && status.session_running && status.desktop_available;
-    const canStart = status.wsl_available && status.runtime_resources_available && configComplete();
+    const canStart = status.runtime_available && status.runtime_resources_available && configComplete();
     const needsNode = !canRestore && Boolean(nodeConfigIssue);
     const startButton = $('startRuntime');
     startButton.dataset.action = needsNode ? 'network-settings' : 'start';
     startButton.textContent = needsNode ? '前往网络设置 ↗' : '启动虚拟环境 ↗';
     startButton.disabled = bootstrapBusy || sessionStarted || (!canRestore && !canStart && !needsNode);
     if (!sessionStarted && !runtimeInFlight) $('stopRuntime').hidden = stoppedByUser || !status.session_running;
-    $('stageTitle').textContent = stoppedByUser ? '环境已停止' : !status.wsl_available ? '准备 WSL 2 运行环境' : status.distro_registered ? '检测到已有虚拟环境' : '准备你的工作空间';
+    $('stageTitle').textContent = stoppedByUser ? '环境已停止' : !status.runtime_available ? (isMac ? '准备 Mac 虚拟环境' : '准备 WSL 2 运行环境') : status.environment_exists ? '检测到已有虚拟环境' : '准备你的工作空间';
     $('stageDescription').textContent = canRestore ? '正在检查已有会话的网络保护，确认后将直接进入。'
-      : !status.wsl_available ? (boot.error?.user_message || '检查并配置 WSL 2。仅在缺少必要组件时才会下载或请求管理员授权。')
+      : !status.runtime_available ? (status.platform_message || boot.error?.user_message || '检查并配置 WSL 2。仅在缺少必要组件时才会下载或请求管理员授权。')
       : needsNode ? nodeConfigIssue
-      : !status.runtime_resources_available ? '未找到完整的运行时资源，请检查应用目录或使用 npm run dev 启动。'
+      : !status.runtime_resources_available ? (isMac ? '请将对应架构的 Linux 镜像放入 claude-tauri/runtime 后刷新。' : '未找到完整的运行时资源，请检查应用目录或使用 npm run dev 启动。')
       : !configComplete() ? '请先完成网络与工作区设置。'
       : '点击启动进入虚拟桌面。';
     if (!sessionStarted && !boot.error) $('installNote').textContent = '';
     if (!sessionStarted) showProtection(status.session_running ? 'unknown' : 'idle');
-    $('runtimeDetail').textContent = !status.wsl_available ? 'WSL 未就绪，请检查 Windows 功能。'
+    $('runtimeDetail').textContent = isMac ? (status.platform_message || 'Mac 开发环境使用 Lima 与 Apple 虚拟化。')
+      : !status.runtime_available ? 'WSL 未就绪，请检查 Windows 功能。'
       : !status.runtime_resources_available ? '运行时资源不完整。'
-      : status.distro_registered ? 'WSL 可用，已发现 claude-vm。' : 'WSL 可用，运行时资源已就绪。';
+      : status.environment_exists ? 'WSL 可用，已发现 claude-vm。' : 'WSL 可用，运行时资源已就绪。';
     if (status.session_running && status.desktop_available && !stoppedByUser && !sessionStarted && !runtimeInFlight) {
       runtimeInFlight = true;
       showProtection('checking');
@@ -638,7 +650,7 @@ async function refreshStatus(manual = false) {
           $('stageTitle').textContent = '环境已停止';
           $('stageDescription').textContent = '之前的会话已经结束，可以直接重新启动。';
           $('installNote').textContent = configComplete() ? '点击启动即可重新进入。' : '请确认网络与工作区设置。';
-          $('startRuntime').disabled = !latest.wsl_available || !latest.runtime_resources_available || !configComplete();
+          $('startRuntime').disabled = !latest.runtime_available || !latest.runtime_resources_available || !configComplete();
           $('stopRuntime').hidden = true;
           showProtection('idle');
         } else {
