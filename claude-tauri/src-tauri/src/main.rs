@@ -11,6 +11,53 @@ use tauri::{Emitter, Manager};
 static RUNTIME_BUSY: AtomicBool = AtomicBool::new(false);
 static EXIT_REQUESTED: AtomicBool = AtomicBool::new(false);
 
+#[cfg(windows)]
+fn enforce_single_instance() -> Option<windows_sys::Win32::Foundation::HANDLE> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Foundation::{CloseHandle, GetLastError, ERROR_ALREADY_EXISTS};
+    use windows_sys::Win32::System::Threading::CreateMutexW;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        FindWindowW, SetForegroundWindow, ShowWindow, SW_RESTORE,
+    };
+
+    let mutex_name: Vec<u16> = std::ffi::OsStr::new("Local\\ClaudeHaven.SingleInstance")
+        .encode_wide()
+        .chain(Some(0))
+        .collect();
+    let handle = unsafe { CreateMutexW(std::ptr::null(), 1, mutex_name.as_ptr()) };
+    if handle.is_null() {
+        return None;
+    }
+    if unsafe { GetLastError() } == ERROR_ALREADY_EXISTS {
+        let title: Vec<u16> = std::ffi::OsStr::new("Claude Haven")
+            .encode_wide()
+            .chain(Some(0))
+            .collect();
+        // The first process may still be creating its Tauri window. Wait briefly
+        // so a fast second launch can still bring that window back from the tray.
+        let mut window = std::ptr::null_mut();
+        for _ in 0..50 {
+            window = unsafe { FindWindowW(std::ptr::null(), title.as_ptr()) };
+            if !window.is_null() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+        if !window.is_null() {
+            unsafe {
+                ShowWindow(window, SW_RESTORE);
+                SetForegroundWindow(window);
+            }
+        }
+        unsafe {
+            CloseHandle(handle);
+        }
+        None
+    } else {
+        Some(handle)
+    }
+}
+
 struct BusyGuard;
 impl Drop for BusyGuard {
     fn drop(&mut self) {
@@ -784,6 +831,11 @@ async fn bootstrap_select_msi(app: tauri::AppHandle) -> Result<Option<std::path:
 }
 
 fn main() {
+    #[cfg(windows)]
+    let _single_instance = match enforce_single_instance() {
+        Some(handle) => handle,
+        None => return,
+    };
     tauri::Builder::default()
         .setup(|app| {
             use tauri::menu::{Menu, MenuItem};

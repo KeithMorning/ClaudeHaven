@@ -283,7 +283,11 @@ function createSelect(select) {
   return { sync };
 }
 const nodeLatency = new Map();
-const selects = { nodeSelect: createSelect($('nodeSelect')) };
+const selects = {
+  nodeSelect: createSelect($('nodeSelect')),
+  environmentLanguage: createSelect($('environmentLanguage')),
+  timezone: createSelect($('timezone')),
+};
 for (const zone of Intl.supportedValuesOf('timeZone')) {
   $('timezone').add(new Option(zone.replaceAll('_', ' '), zone));
 }
@@ -484,6 +488,8 @@ async function loadConfig() {
     }
     $('timezone').value = config.timezone || '';
     $('environmentLanguage').value = config.language || 'en-US';
+    selects.timezone.sync();
+    selects.environmentLanguage.sync();
     if (config.yaml_path) {
       const selected = await showNodes(config.yaml_path, config.node);
       if (!selected) {
