@@ -1,5 +1,8 @@
-use super::state::{decode_windows_output, parse_distro_list, WslDistro};
+use super::state::WslDistro;
+#[cfg(windows)]
+use super::state::{decode_windows_output, parse_distro_list};
 use serde::{Deserialize, Serialize};
+#[cfg(windows)]
 use std::process::Command;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -143,6 +146,12 @@ fn powershell_snapshot() -> Result<WindowsSnapshot, String> {
     Err("当前仅支持 Windows。".into())
 }
 
+#[cfg(not(windows))]
+pub fn probe_host() -> Result<HostProbe, String> {
+    Err("WSL 环境探测仅适用于 Windows。".into())
+}
+
+#[cfg(windows)]
 pub fn probe_host() -> Result<HostProbe, String> {
     let windows = powershell_snapshot()?;
     let version = crate::runtime::run_wsl(&["--version"]);

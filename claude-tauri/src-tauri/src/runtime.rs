@@ -16,6 +16,15 @@ pub fn shell_quote(value: &str) -> String {
 /// Convert a local drive path to WSL's standard automount location.
 /// UNC and relative paths are rejected rather than guessed.
 pub fn guest_path(path: &Path) -> Result<String, String> {
+    #[cfg(target_os = "macos")]
+    {
+        if !path.is_absolute() || path.components().any(|c| c == std::path::Component::ParentDir) {
+            return Err("请选择不含上级目录引用的绝对路径。".into());
+        }
+        return path.to_str().map(str::to_owned).ok_or("路径包含无法转换的字符。".into());
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
     let raw = path
         .to_str()
         .ok_or("路径包含无法转换的字符。")?
@@ -35,6 +44,7 @@ pub fn guest_path(path: &Path) -> Result<String, String> {
         (bytes[0] as char).to_ascii_lowercase(),
         &raw[3..]
     ))
+    }
 }
 
 /// Development sources are deliberately explicit; packaged resources will be
@@ -242,7 +252,7 @@ fn wsl_exe_path() -> PathBuf {
     PathBuf::from(system_root).join("System32").join("wsl.exe")
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 pub(crate) fn output_text(output: &std::process::Output) -> String {
     let mut bytes = output.stdout.clone();
     bytes.extend_from_slice(&output.stderr);
@@ -262,19 +272,13 @@ fn wsl2_probe_error(stage: &str, output: &std::process::Output) -> String {
     }
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 fn guest_script(script: &str) -> Result<String, String> {
     let encoded = bash_command(script);
-    let result = run_wsl(&[
-        "-d",
-        "claude-vm",
-        "-u",
-        "root",
-        "--",
-        "bash",
-        "-c",
-        &encoded,
-    ])?;
+    #[cfg(windows)]
+    let result = run_wsl(&["-d", "claude-vm", "-u", "root", "--", "bash", "-c", &encoded])?;
+    #[cfg(target_os = "macos")]
+    let result = macos::exec(&["bash", "-c", &encoded])?;
     if !result.status.success() {
         return Err(format!("虚拟环境操作失败：{}", output_text(&result)));
     }
@@ -319,12 +323,12 @@ fn guard_failure_message(reason: &str) -> &'static str {
     }
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 pub(crate) fn read_guard_state() -> Result<String, String> {
     read_guard_report().map(|(state, _)| state)
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 pub(crate) fn read_guard_details() -> Result<serde_json::Value, String> {
     let (state, raw) = read_guard_report()?;
     let field = |key: &str| raw.lines().find_map(|line| {
@@ -341,7 +345,7 @@ pub(crate) fn read_guard_details() -> Result<serde_json::Value, String> {
     }))
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 fn read_guard_report() -> Result<(String, String), String> {
     let script = "set -eu\ntest -s /run/claude-vm/net-guard.pid\nkill -0 \"$(cat /run/claude-vm/net-guard.pid)\"\ncat /run/claude-vm/net-guard.state\nif test -r /run/claude-vm/session-timezone; then cat /run/claude-vm/session-timezone; fi\n";
     let raw = guest_script(script)?;
@@ -366,7 +370,7 @@ fn protection_prerequisites_met(status: &serde_json::Value) -> bool {
         && status.get("ipv6_disabled").and_then(|v| v.as_bool()) == Some(true)
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 pub(crate) fn verify_existing_desktop() -> Result<(), String> {
     guest_script(
         "set -eu\ntest -f /run/claude-vm/ready\npgrep -f '[w]ebsockify --web=' >/dev/null\n",
@@ -378,7 +382,7 @@ pub(crate) fn verify_existing_desktop() -> Result<(), String> {
     Ok(())
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 pub(crate) fn ensure_clipboard_bridge() -> Result<(), String> {
     guest_script(
         "set -eu\ncommand -v vncconfig >/dev/null\nif ! pgrep -x vncconfig >/dev/null; then DISPLAY=:1 nohup vncconfig -nowin </dev/null >/tmp/claude-vm-vncconfig.log 2>&1 & fi\nprintf READY\n",
@@ -386,7 +390,7 @@ pub(crate) fn ensure_clipboard_bridge() -> Result<(), String> {
     Ok(())
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 pub(crate) fn sync_diagnostics(root: &Path) -> Result<(), String> {
     let all = script_manifest(&root.join("scripts"))?;
     let mut selected = BTreeMap::new();
@@ -396,12 +400,11 @@ pub(crate) fn sync_diagnostics(root: &Path) -> Result<(), String> {
             all.get(name).ok_or("本地检查脚本不完整。")?.clone(),
         );
     }
-    let program = sync_script(
-        &guest_path(&root.join("scripts"))?,
-        &guest_path(&root.join("assets"))?,
-        &selected,
-        &BTreeMap::new(),
-    );
+    #[cfg(windows)]
+    let (scripts, assets) = (guest_path(&root.join("scripts"))?, guest_path(&root.join("assets"))?);
+    #[cfg(target_os = "macos")]
+    let (scripts, assets) = ("/mnt/haven-runtime/scripts".to_string(), "/mnt/haven-runtime/assets".to_string());
+    let program = sync_script(&scripts, &assets, &selected, &BTreeMap::new());
     if guest_script(&program)?
         .lines()
         .any(|line| line.trim() == "SYNCED")
@@ -412,7 +415,7 @@ pub(crate) fn sync_diagnostics(root: &Path) -> Result<(), String> {
     }
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 pub(crate) fn ensure_guard_running(root: &Path) -> Result<(), String> {
     let state = guest_script("set -eu\np=$(cat /run/claude-vm/net-guard.pid 2>/dev/null || true)\ncase \"$p\" in ''|*[!0-9]*) ;; *) if kill -0 \"$p\" 2>/dev/null && tr '\\0' ' ' < /proc/\"$p\"/cmdline | grep -q '[n]et-guard.sh'; then printf running; exit 0; fi;; esac\npython3 -c 'import glob,os\nfound={}\nfor p in glob.glob(\"/proc/[0-9]*/cmdline\"):\n try:\n  with open(p,\"rb\") as f: args=f.read().split(b\"\\0\")\n  if b\"/opt/scripts/net-guard.sh\" not in args: continue\n  q=p.rsplit(\"/\",1)[0]; lines=open(q+\"/status\").read().splitlines(); state=next(x.split()[1] for x in lines if x.startswith(\"State:\")); parent=int(next(x.split()[1] for x in lines if x.startswith(\"PPid:\")))\n  if state != \"Z\": found[int(os.path.basename(q))]=parent\n except (OSError,StopIteration,ValueError): pass\nroots=[pid for pid,parent in found.items() if parent not in found]\nprint(\"absent\" if not roots else (\"orphan:\"+str(roots[0]) if len(roots)==1 else \"ambiguous\"))'\n")?;
     let orphan = match state.as_str() {
@@ -778,6 +781,7 @@ impl StopOperations for WslStop {
 mod tests {
     use super::*;
 
+    #[cfg(not(target_os = "macos"))]
     #[test]
     fn windows_drive_paths_are_mapped_and_unc_paths_rejected() {
         assert_eq!(
@@ -789,6 +793,7 @@ mod tests {
         assert!(guest_path(Path::new(r"E:\work\..\elsewhere")).is_err());
     }
 
+    #[cfg(not(target_os = "macos"))]
     #[test]
     fn canonicalized_local_resource_path_is_mapped() {
         assert_eq!(
@@ -1232,5 +1237,207 @@ mod tests {
             recovery.as_ref().is_some_and(|result| result.is_ok()),
             "guard recovery failed: {recovery:?}"
         );
+    }
+}
+
+#[cfg(target_os = "macos")]
+pub mod macos;
+#[cfg(target_os = "macos")]
+pub struct MacLaunch {
+    pub config: crate::WorkspaceConfig,
+    pub runtime_root: PathBuf,
+    data_dir: PathBuf,
+    progress: Box<dyn Fn(&'static str)>,
+    manifest: BTreeMap<String, String>,
+    asset_files: BTreeMap<String, String>,
+}
+#[cfg(target_os = "macos")]
+impl MacLaunch {
+    pub fn new(
+        config: crate::WorkspaceConfig,
+        runtime_root: PathBuf,
+        data_dir: PathBuf,
+        progress: impl Fn(&'static str) + 'static,
+    ) -> Self {
+        Self {
+            config,
+            runtime_root,
+            data_dir,
+            progress: Box::new(progress),
+            manifest: BTreeMap::new(),
+            asset_files: BTreeMap::new(),
+        }
+    }
+}
+#[cfg(target_os = "macos")]
+impl LaunchOperations for MacLaunch {
+    fn validate(&mut self) -> Result<(), String> {
+        crate::validate_exit_node(&self.config)?;
+        if !crate::valid_timezone_setting(&self.config.timezone) {
+            return Err("请选择有效的时区。".into());
+        }
+        if !Path::new(&self.config.workspace).is_dir() {
+            return Err("请选择可访问的工作区。".into());
+        }
+        guest_path(Path::new(&self.config.workspace))?;
+        guest_path(Path::new(&self.config.yaml_path))?;
+        let root = &self.runtime_root;
+        if !macos::resources_ready(root) {
+            return Err("运行时资源不完整。".into());
+        }
+        self.manifest = script_manifest(&root.join("scripts"))?;
+        self.asset_files = asset_manifest(&root.join("assets"))?;
+        for name in [
+            "entrypoint.sh",
+            "net-guard.sh",
+            "net-guard.py",
+            "claude-supported-regions.py",
+            "check-network.py",
+            "tun-core.sh",
+            "tun-merge.py",
+        ] {
+            if !self.manifest.contains_key(name) {
+                return Err(format!("缺少必需的运行时脚本：{name}"));
+            }
+        }
+        for name in [
+            "novnc/desktop.html",
+            "novnc/novnc-1.7.0.tgz",
+            "rime/wanxiang-pure.zip",
+        ] {
+            if !self.asset_files.contains_key(name) {
+                return Err(format!("缺少必需的运行时资源：{name}"));
+            }
+        }
+        Ok(())
+    }
+
+    fn sync_verified_resources(&mut self) -> Result<(), String> {
+        (self.progress)("mac-sync");
+        let script = sync_script(
+            "/mnt/haven-runtime/scripts",
+            "/mnt/haven-runtime/assets",
+            &self.manifest,
+            &self.asset_files,
+        );
+        if guest_script(&script)?.lines().any(|s| s.trim() == "SYNCED") {
+            Ok(())
+        } else {
+            Err("运行时同步未完成，已中止启动。".into())
+        }
+    }
+
+    fn install_network_config(&mut self) -> Result<(), String> {
+        macos::install_config(&self.config)
+    }
+
+    fn await_desktop(&mut self) -> Result<(), String> {
+        use std::time::{Duration, Instant};
+
+        // Each real milestone gives the guest time to finish that phase.
+        const STALL_LIMIT: Duration = Duration::from_secs(180);
+        let began = Instant::now();
+        let mut last_progress = began;
+        let mut current_stage = None;
+        let mut slow = false;
+        let stages = [
+            ("network", "mac-network", "初始化网络"),
+            ("fonts", "mac-fonts", "准备字体和桌面资源"),
+            ("desktop", "mac-desktop", "启动虚拟桌面"),
+            ("input", "mac-input", "准备输入法"),
+        ];
+        loop {
+            if !macos::running() {
+                return Err("虚拟机在桌面就绪前已退出，请查看启动日志。".into());
+            }
+            if let Ok(status) = guest_script(
+                "if test -f /run/claude-vm/startup-exit; then
+                    printf 'EXIT '; cat /run/claude-vm/startup-exit
+                 elif test -f /run/claude-vm/ready && pgrep -f '[w]ebsockify --web=' >/dev/null; then
+                    printf READY
+                 elif test -f /run/claude-vm/startup-stage; then
+                    cat /run/claude-vm/startup-stage
+                 fi",
+            ) {
+                if status == "READY" {
+                    let address = std::net::SocketAddr::from(([127, 0, 0, 1], 6080));
+                    if std::net::TcpStream::connect_timeout(&address, Duration::from_millis(300)).is_ok() {
+                        return Ok(());
+                    }
+                }
+                if let Some(code) = status.strip_prefix("EXIT ") {
+                    let phase = stages[current_stage.unwrap_or(0)].2;
+                    return Err(format!("{phase}时桌面进程已退出（退出码 {code}）。请查看虚拟机内的 /tmp/claude-haven.log。"));
+                }
+                if let Some(next) = stages.iter().position(|stage| stage.0 == status) {
+                    if current_stage.is_none_or(|current| next > current) {
+                        last_progress = Instant::now();
+                        current_stage = Some(next);
+                        (self.progress)(stages[next].1);
+                    }
+                }
+            }
+            if !slow && began.elapsed() >= Duration::from_secs(60) {
+                (self.progress)("mac-slow");
+                slow = true;
+            }
+            if last_progress.elapsed() >= STALL_LIMIT {
+                let phase = stages[current_stage.unwrap_or(0)].2;
+                return Err(format!("{phase}已超过 3 分钟没有进展。请查看虚拟机内的 /tmp/claude-haven.log。"));
+            }
+            std::thread::sleep(Duration::from_millis(700));
+        }
+    }
+
+    fn verify_guard(&mut self) -> Result<(), String> {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+        let mut blocked = false;
+        while std::time::Instant::now() < deadline {
+            if let Ok(state) = read_guard_state() {
+                if state == "guarded" {
+                    return Ok(());
+                }
+                if state == "blocked" || state == "off" {
+                    blocked = true;
+                    break;
+                }
+            }
+            std::thread::sleep(std::time::Duration::from_millis(700));
+        }
+        let reason = if blocked {
+            guest_script("sed -n 's/^reason=//p' /run/claude-vm/net-guard.state | grep -E '^(proxy-unreachable|exit-region-risk|exit-region-unknown|dns-not-ready|split-exit|anthropic-unreachable|leak-detected|lock-failed)$' || true").unwrap_or_default()
+        } else {
+            String::new()
+        };
+        Err(format!(
+            "{} 环境不会被标记为就绪。",
+            guard_failure_message(&reason)
+        ))
+    }
+    fn ensure_stopped_and_port_free(&mut self) -> Result<(), String> {
+        if macos::running() { return Err("已有 Mac 环境正在运行，请先停止。".into()); }
+        if std::net::TcpListener::bind(("127.0.0.1", 6080)).is_err() { return Err("本机 6080 端口已被占用。".into()); }
+        Ok(())
+    }
+    fn ensure_runtime(&mut self) -> Result<(), String> { macos::prepare(&self.config, &self.runtime_root, &self.data_dir, self.progress.as_ref()) }
+    fn spawn_entrypoint(&mut self) -> Result<(), String> {
+        let (lang, chrome) = match self.config.language {
+            crate::EnvironmentLanguage::English => ("en_US.UTF-8", "en-US"),
+            crate::EnvironmentLanguage::SimplifiedChinese => ("zh_CN.UTF-8", "zh-CN"),
+            crate::EnvironmentLanguage::TraditionalChinese => ("zh_TW.UTF-8", "zh-TW"),
+        };
+        let script = format!(
+            r#"set -e
+mkdir -p /run/claude-vm
+rm -f /run/claude-vm/startup-exit /run/claude-vm/startup-stage
+nohup bash -c '"$@"; code=$?; printf "%s\n" "$code" > /run/claude-vm/startup-exit' haven-startup \
+    env HAVEN_STARTUP_PROGRESS=1 HAVEN_TIMEZONE={} LANG={lang} LC_ALL={lang} CHROME_LANG={chrome} \
+    TUN_NODE={} WORKSPACE=/workspace NET_GUARD=strict NET_GUARD_STRICT_REGION=1 INPUT_METHOD=rime \
+    NOVNC_PORT=6080 /opt/scripts/entrypoint.sh </dev/null >/tmp/claude-haven.log 2>&1 &"#,
+            shell_quote(&self.config.timezone),
+            shell_quote(&self.config.node),
+        );
+        guest_script(&script)?;
+        Ok(())
     }
 }

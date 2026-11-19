@@ -453,7 +453,21 @@ async fn check_network(app: tauri::AppHandle) -> Result<Vec<serde_json::Value>, 
         .await
         .map_err(|e| format!("网络检查中断：{e}"))?
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "macos")]
+    {
+        let lock = take_runtime_lock()?;
+        let resources = runtime_root(&app)?;
+        tauri::async_runtime::spawn_blocking(move || {
+            let _lock = lock;
+            runtime::sync_diagnostics(&resources)?;
+            let output = runtime::macos::exec(&["python3", "/opt/scripts/check-network.py"])?;
+            let report: serde_json::Value = serde_json::from_slice(&output.stdout).map_err(|e| e.to_string())?;
+            if report["runtimeUp"] != 1 { return Err("虚拟桌面未就绪。".into()); }
+            Ok(network_groups(&report))
+        }).await.map_err(|e| e.to_string())?
+
+    }
+    #[cfg(not(any(windows, target_os = "macos")))]
     Err("当前仅支持 Windows。".into())
 }
 
@@ -462,6 +476,11 @@ struct LaunchOutcome {
     ok: bool,
     needs_stop: bool,
     error: String,
+}
+
+#[cfg(target_os = "macos")]
+fn mac_vm_data(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
+    app.path().app_data_dir().map(|path| path.join("native-vm")).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -499,7 +518,27 @@ async fn start_runtime(app: tauri::AppHandle) -> Result<LaunchOutcome, String> {
         .await
         .map_err(|e| format!("启动操作中断：{e}"))?
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "macos")]
+    {
+        let lock = take_runtime_lock()?;
+        let config = load_config(app.clone())?;
+        let root = runtime_root(&app)?;
+        let data = mac_vm_data(&app)?;
+        tauri::async_runtime::spawn_blocking(move || {
+            let _lock = lock;
+            if !runtime::macos::registered(&data) {
+                let _ = app.emit("startup-progress", "mac-first-start");
+            }
+            let progress_app = app.clone();
+            let mut ops = runtime::MacLaunch::new(config, root, data, move |stage| {
+                let _ = progress_app.emit("startup-progress", stage);
+            });
+            let result = runtime::launch_with_progress(&mut ops, |stage| { let _ = app.emit("startup-progress", stage); });
+            Ok(LaunchOutcome { ok: result.is_ok(), needs_stop: result.is_err() && runtime::macos::running(), error: result.err().unwrap_or_default() })
+        }).await.map_err(|e| e.to_string())?
+
+    }
+    #[cfg(not(any(windows, target_os = "macos")))]
     {
         let _ = app;
         Err("当前仅支持 Windows。".into())
@@ -524,7 +563,11 @@ async fn guard_status() -> Result<serde_json::Value, String> {
         .await
         .map_err(|e| format!("守卫状态检查中断：{e}"))?
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "macos")]
+    {
+        runtime::read_guard_details()
+    }
+    #[cfg(not(any(windows, target_os = "macos")))]
     Err("当前仅支持 Windows。".into())
 }
 
@@ -583,7 +626,20 @@ async fn restore_session(app: tauri::AppHandle) -> Result<(), String> {
         .await
         .map_err(|e| format!("恢复会话失败：{e}"))?
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "macos")]
+    {
+        let _ = app;
+        let lock = take_runtime_lock()?;
+        tauri::async_runtime::spawn_blocking(move || {
+            let _lock = lock;
+            runtime::verify_existing_desktop()?;
+            runtime::ensure_clipboard_bridge()?;
+            if runtime::read_guard_state()? != "guarded" { return Err("网络守卫尚未确认保护状态。".into()); }
+            Ok(())
+        }).await.map_err(|e| e.to_string())?
+
+    }
+    #[cfg(not(any(windows, target_os = "macos")))]
     Err("当前仅支持 Windows。".into())
 }
 
@@ -611,7 +667,9 @@ fn request_exit(app: tauri::AppHandle) {
                 let _lock = BusyGuard;
                 #[cfg(windows)]
                 let result = runtime::shutdown(&mut runtime::WslStop);
-                #[cfg(not(windows))]
+                #[cfg(target_os = "macos")]
+                let result = runtime::macos::stop();
+                #[cfg(not(any(windows, target_os = "macos")))]
                 let result: Result<(), String> = Ok(());
                 break result;
             }
@@ -660,12 +718,18 @@ async fn stop_runtime() -> Result<(), String> {
         .await
         .map_err(|e| format!("停止操作中断：{e}"))?
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "macos")]
+    {
+        let lock = take_runtime_lock()?;
+        tauri::async_runtime::spawn_blocking(move || { let _lock = lock; runtime::macos::stop() }).await.map_err(|e| e.to_string())?
+
+    }
+    #[cfg(not(any(windows, target_os = "macos")))]
     Err("当前仅支持 Windows。".into())
 }
 
 #[tauri::command]
-async fn reset_system(confirmation: String) -> Result<(), String> {
+async fn reset_system(_app: tauri::AppHandle, confirmation: String) -> Result<(), String> {
     if confirmation != "RESET_CLAUDE_ENVIRONMENT" {
         return Err("重置确认无效，未执行任何操作。".into());
     }
@@ -703,12 +767,20 @@ async fn reset_system(confirmation: String) -> Result<(), String> {
         .await
         .map_err(|e| format!("系统重置中断：{e}"))?
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "macos")]
+    {
+        let lock = take_runtime_lock()?;
+        let data = mac_vm_data(&_app)?;
+        tauri::async_runtime::spawn_blocking(move || { let _lock = lock; runtime::macos::reset(&data) }).await.map_err(|e| e.to_string())?
+
+    }
+    #[cfg(not(any(windows, target_os = "macos")))]
     Err("当前仅支持 Windows。".into())
 }
 
 #[derive(Serialize)]
 struct RuntimeStatus {
+    platform: &'static str,
     wsl_available: bool,
     distro_registered: bool,
     session_running: bool,
@@ -760,6 +832,7 @@ async fn runtime_status(app: tauri::AppHandle) -> RuntimeStatus {
                 && runtime::script_manifest(&resources.join("scripts")).is_ok()
         });
         RuntimeStatus {
+            platform: std::env::consts::OS,
             wsl_available: status,
             distro_registered: registered,
             session_running,
@@ -768,10 +841,18 @@ async fn runtime_status(app: tauri::AppHandle) -> RuntimeStatus {
             host_probe: host,
         }
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "macos")]
+    {
+        let ready = runtime_root(&app).is_ok_and(|r| runtime::macos::resources_ready(&r));
+        RuntimeStatus {
+            platform: std::env::consts::OS, wsl_available: runtime::macos::available(), distro_registered: mac_vm_data(&app).is_ok_and(|path| runtime::macos::registered(&path)), session_running: runtime::macos::running(), desktop_available: runtime::verify_existing_desktop().is_ok(), runtime_resources_available: ready, host_probe: None }
+
+    }
+    #[cfg(not(any(windows, target_os = "macos")))]
     {
         let _ = app;
         RuntimeStatus {
+            platform: std::env::consts::OS,
             wsl_available: false,
             distro_registered: false,
             session_running: false,

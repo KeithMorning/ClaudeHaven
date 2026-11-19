@@ -11,6 +11,7 @@ let statusGeneration = 0;
 let nodeConfigIssue = '';
 const configComplete = () => Boolean(!nodeConfigIssue && config.yaml_path && config.node && config.workspace);
 let bootstrapState = null;
+let latestRuntimePlatform = null;
 let bootstrapBusy = false;
 let latestHostProbe = null;
 let lastBootstrapTask = null;
@@ -531,6 +532,42 @@ async function connectDesktop() {
   if (lastGuardState === 'guarded') void runNetworkCheck();
 }
 
+const macStartupStages = {
+  'mac-image': [0, '正在准备内置 Linux 镜像'],
+  'mac-boot': [1, '正在启动 Linux 虚拟机并挂载工作区'],
+  'mac-sync': [2, '正在同步桌面资源与启动脚本'],
+  'mac-network': [2, '正在初始化虚拟机网络'],
+  'mac-fonts': [2, '正在准备字体和桌面资源'],
+  'mac-desktop': [2, '正在打开虚拟桌面'],
+  'mac-input': [2, '正在准备中文输入法'],
+  'desktop-ready': [3, '桌面已启动，正在确认网络保护'],
+};
+
+function showMacStartupStage(event) {
+  if (event === 'mac-first-start') {
+    $('startupTitle').textContent = '首次启动';
+    $('startupNote').textContent = '首次会解压镜像并初始化桌面，请保持应用打开。';
+    $('startupNote').hidden = false;
+    return;
+  }
+  if (event === 'mac-slow') {
+    $('startupNote').textContent = '初始化比平时久一些，应用仍在等待桌面就绪。';
+    $('startupNote').hidden = false;
+    return;
+  }
+  const stage = macStartupStages[event];
+  if (!stage) return;
+  const [index, detail] = stage;
+  $('startupDetail').textContent = detail;
+  $('startupTrack').hidden = true;
+  $('startupSteps').hidden = false;
+  Array.from($('startupSteps').children).forEach((step, position) => {
+    step.toggleAttribute('data-complete', position < index);
+    if (position === index) step.setAttribute('aria-current', 'step');
+    else step.removeAttribute('aria-current');
+  });
+}
+
 async function startSession() {
   if (runtimeInFlight) return;
   autoStartDone = true;
@@ -543,9 +580,16 @@ async function startSession() {
   $('startupOverlay').hidden = false;
   $('startupTitle').textContent = '正在准备工作空间';
   $('startupDetail').textContent = '正在启动虚拟桌面';
+  $('startupSteps').hidden = true;
+  $('startupTrack').hidden = false;
+  $('startupNote').hidden = true;
   let unlisten = () => {};
   try {
     unlisten = await window.__TAURI__.event.listen('startup-progress', ({ payload }) => {
+      if (latestRuntimePlatform === 'macos') {
+        showMacStartupStage(payload);
+        return;
+      }
       if (payload === 'desktop-starting') $('startupDetail').textContent = '正在打开虚拟桌面';
       if (payload === 'desktop-ready') {
         $('desktopFrame').src = 'http://127.0.0.1:6080/desktop.html?autoconnect=1';
@@ -592,13 +636,16 @@ async function refreshStatus(manual = false) {
   try {
     const status = await invoke('runtime_status');
     const boot = await invoke('bootstrap_snapshot');
+    latestRuntimePlatform = status.platform;
+    const isMac = status.platform === 'macos';
+    const backendName = isMac ? 'Apple 虚拟化' : 'WSL';
     latestHostProbe = status.host_probe || null;
     renderBootstrap(boot, latestHostProbe);
     if (generation !== statusGeneration || runtimeInFlight) return;
     $('topDot').classList.toggle('available', status.wsl_available);
-    if (!sessionStarted) $('topStatus').textContent = status.wsl_available ? 'WSL 可用' : 'WSL 未就绪';
-    $('installWsl').hidden = status.wsl_available;
-    $('selectWslMsi').hidden = status.wsl_available || status.host_probe?.wsl_cli_available !== false;
+    if (!sessionStarted) $('topStatus').textContent = status.wsl_available ? `${backendName} 可用` : `${backendName} 未就绪`;
+    $('installWsl').hidden = isMac || status.wsl_available;
+    $('selectWslMsi').hidden = isMac || status.wsl_available || status.host_probe?.wsl_cli_available !== false;
     const canRestore = !stoppedByUser && status.session_running && status.desktop_available;
     const canStart = status.wsl_available && status.runtime_resources_available && configComplete();
     const needsNode = !canRestore && Boolean(nodeConfigIssue);
@@ -607,18 +654,18 @@ async function refreshStatus(manual = false) {
     startButton.textContent = needsNode ? '前往网络设置 ↗' : '启动虚拟环境 ↗';
     startButton.disabled = bootstrapBusy || sessionStarted || (!canRestore && !canStart && !needsNode);
     if (!sessionStarted && !runtimeInFlight) $('stopRuntime').hidden = stoppedByUser || !status.session_running;
-    $('stageTitle').textContent = stoppedByUser ? '环境已停止' : !status.wsl_available ? '准备 WSL 2 运行环境' : status.distro_registered ? '检测到已有虚拟环境' : '准备你的工作空间';
+    $('stageTitle').textContent = stoppedByUser ? '环境已停止' : !status.wsl_available ? `准备 ${backendName} 运行环境` : status.distro_registered ? '检测到已有虚拟环境' : '准备你的工作空间';
     $('stageDescription').textContent = canRestore ? '正在检查已有会话的网络保护，确认后将直接进入。'
-      : !status.wsl_available ? (boot.error?.user_message || '检查并配置 WSL 2。仅在缺少必要组件时才会下载或请求管理员授权。')
+      : !status.wsl_available ? (isMac ? '此版本需要配备 Apple 芯片的 Mac。' : boot.error?.user_message || '检查并配置 WSL 2。仅在缺少必要组件时才会下载或请求管理员授权。')
       : needsNode ? nodeConfigIssue
       : !status.runtime_resources_available ? '未找到完整的运行时资源，请检查应用目录或使用 npm run dev 启动。'
       : !configComplete() ? '请先完成网络与工作区设置。'
       : '点击启动进入虚拟桌面。';
     if (!sessionStarted && !boot.error) $('installNote').textContent = '';
     if (!sessionStarted) showProtection(status.session_running ? 'unknown' : 'idle');
-    $('runtimeDetail').textContent = !status.wsl_available ? 'WSL 未就绪，请检查 Windows 功能。'
+    $('runtimeDetail').textContent = !status.wsl_available ? (isMac ? 'Apple 虚拟化不可用。' : 'WSL 未就绪，请检查 Windows 功能。')
       : !status.runtime_resources_available ? '运行时资源不完整。'
-      : status.distro_registered ? 'WSL 可用，已发现 claude-vm。' : 'WSL 可用，运行时资源已就绪。';
+      : status.distro_registered ? `${backendName} 可用，已发现虚拟环境。` : `${backendName} 可用，运行时资源已就绪。`;
     if (status.session_running && status.desktop_available && !stoppedByUser && !sessionStarted && !runtimeInFlight) {
       runtimeInFlight = true;
       showProtection('checking');
@@ -626,6 +673,9 @@ async function refreshStatus(manual = false) {
       $('stageTitle').textContent = '正在恢复已有会话';
       $('startupTitle').textContent = '正在恢复工作空间';
       $('startupDetail').textContent = '正在确认已有会话的网络保护';
+      $('startupSteps').hidden = true;
+      $('startupTrack').hidden = false;
+      $('startupNote').hidden = true;
       $('startupOverlay').hidden = false;
       try {
         await invoke('restore_session');

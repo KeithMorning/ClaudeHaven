@@ -1,6 +1,14 @@
 #!/usr/bin/env bash
 set -e
 
+# The Mac launcher reads phase milestones from this file during startup.
+report_startup() {
+  if [ "${HAVEN_STARTUP_PROGRESS:-}" = 1 ]; then
+    printf '%s\n' "$1" > /run/claude-vm/startup-stage || true
+  fi
+}
+report_startup network
+
 # 0) Node / Claude Code 可执行路径（WSL 导入后不继承镜像 ENV，这里显式补上）
 export PATH="/usr/local/lib/nodejs/node-v20.18.1-linux-x64/bin:$PATH"
 
@@ -208,6 +216,8 @@ if [ -n "$vm_machine_id" ]; then
   echo "$vm_machine_id" > /var/lib/dbus/machine-id 2>/dev/null || true
 fi
 
+report_startup fonts
+
 # 2.7) 清掉镜像里残留的「名单内」CJK 字体
 #     旧版 rootfs 装了 fonts-noto-cjk（早期为了中文界面），浏览器能枚举到它，
 #     体检直接记为「字体地区特征 → 中国」并扣 13 分。
@@ -392,6 +402,8 @@ if [ -n "$_cb_dir" ]; then
   done
 fi
 
+report_startup desktop
+
 # 4) 显示后端（2.0：只有串流桌面一种模式）
 #    启动 Xtigervnc（WSL 把 /tmp/.X11-unix 挂成只读，故禁用 unix socket，
 #    仅用 TCP 5901）。分辨率只是「初始值」：客户端连上后会用 RFB 的
@@ -495,6 +507,8 @@ nohup /opt/scripts/desktop-guard.sh >/tmp/desktop-guard.log 2>&1 &
 #   fcitx5 依赖 D-Bus 会话总线（ibus 可以 autolaunch，fcitx5-remote 直接报错），
 #   所以这里显式起一个 session bus 并写进 runtime-env。
 #   daemon 必须挂在本会话下：拉起它的 wsl.exe 一旦退出，输入法服务跟着消失。
+report_startup input
+
 INPUT_METHOD="${INPUT_METHOD:-off}"
 if [ "$INPUT_METHOD" = "rime" ]; then
   /opt/scripts/rime-setup.sh || echo "[claude-vm] 输入法安装失败，本次不启用"

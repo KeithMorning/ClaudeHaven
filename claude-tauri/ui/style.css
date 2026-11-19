@@ -57,6 +57,14 @@ main{min-height:0;overflow:hidden}
 .startup-orbit{width:48px;height:48px;flex:none;display:grid;place-items:center;border:1px solid #805d4d;border-radius:50%;color:#eda482;font:700 18px Consolas,monospace;position:relative}
 .startup-orbit:after{content:"";position:absolute;inset:-4px;border:2px solid transparent;border-top-color:#e59872;border-radius:50%;animation:orbit 1.3s linear infinite}
 .startup-track{height:3px;width:190px;max-width:100%;overflow:hidden;background:#3b413e;border-radius:2px}.startup-track span{display:block;width:42%;height:100%;background:#e59872;border-radius:2px;animation:travel 1.8s ease-in-out infinite}
+.startup-steps[hidden],.startup-note[hidden],.startup-track[hidden]{display:none}
+.startup-steps{display:flex;flex-wrap:wrap;gap:8px;margin:0;padding:0;list-style:none}
+.startup-steps li{padding-top:5px;border-top:2px solid #414644;color:#a3aaa5;font-size:11px;white-space:nowrap}
+.startup-steps li[data-complete]{border-color:#698b78;color:#b8cec0}
+.startup-steps li[aria-current="step"]{border-color:#e59872;color:#f2bb9f;animation:startup-pulse 1.8s ease-in-out infinite}
+.startup-card .startup-note{margin:10px 0 0}
+@keyframes startup-pulse{50%{border-color:#805d4d}}
+@media(prefers-reduced-motion:reduce){.startup-steps li[aria-current="step"]{animation:none}}
 .background-check{display:inline-flex;align-items:center;gap:9px;min-height:30px;padding:0 10px;border:1px solid #343b44;border-radius:7px;background:#20252b;color:#c8cfd8;font-size:12px;cursor:pointer}
 .background-check:hover,.background-check[aria-expanded="true"]{background:#2a3139;color:#f4f6f8}
 .background-check:focus-visible{outline:2px solid #e58b65;outline-offset:2px}

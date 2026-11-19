@@ -1,0 +1,21 @@
+{
+  "bundle": {
+    "targets": [
+      "app"
+    ],
+    "icon": [
+      "icons/icon.png"
+    ],
+    "macOS": {
+      "minimumSystemVersion": "13.0"
+    },
+    "resources": {
+      "../runtime/rootfs.tar.gz": null,
+      "../runtime/native/kernel": "runtime/native/kernel",
+      "../runtime/native/initrd": "runtime/native/initrd",
+      "../runtime/native/system.img.gz": "runtime/native/system.img.gz",
+      "../runtime/native/image-version": "runtime/native/image-version",
+      "../runtime/native/haven-vm": "runtime/native/haven-vm"
+    }
+  }
+}

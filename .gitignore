@@ -33,3 +33,6 @@ skills-lock.json
 # Python 编译产物
 __pycache__/
 *.pyc
+
+# Native macOS build artifacts
+claude-tauri/runtime/native/
