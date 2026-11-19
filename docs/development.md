@@ -1,6 +1,6 @@
 # 开发指南
 
-本文面向希望从源码运行、修改或打包 Claude Haven 的开发者。普通用户请从仓库首页的[开始使用](../README.md#开始使用)开始。
+本文面向希望从源码运行、修改或打包 Claude Haven 的开发者。普通用户请从仓库首页的[开始使用](../README.md#get-started)开始，也可以切换到[简体中文指南](../README.zh-CN.md#开始使用)。
 
 ## Windows x64 开发
 

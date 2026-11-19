@@ -1,88 +1,100 @@
+<p align="right">English · <a href="README.zh-CN.md">简体中文</a></p>
+
 <div align="center">
-  <img src="claude-tauri/ui/assets/claude-cage.png" alt="Claude Haven 标志" width="132" />
+  <img src="claude-tauri/ui/assets/claude-cage.png" alt="Claude Haven logo" width="132" />
   <h1>Claude Haven</h1>
-  <p><strong>让 Claude Code 拥有自己的桌面工作区</strong></p>
-  <p>在 Windows 和 Apple Silicon Mac 上，使用一张专注的 Linux 桌面处理项目。</p>
+  <p><strong>Fast to launch. Small to download.</strong></p>
+  <p>Give Claude Code a focused Linux desktop workspace on Windows and Apple Silicon Mac.</p>
+  <p>About 400 MB on Mac · About 600 MB on Windows</p>
   <p>
     <img src="https://img.shields.io/badge/Windows%20x64-supported-2ea44f?style=flat-square" alt="Windows x64 supported" />
     <img src="https://img.shields.io/badge/macOS%2013%2B-Apple%20Silicon%20supported-2ea44f?style=flat-square" alt="macOS 13 and Apple Silicon supported" />
   </p>
   <p>
-    <a href="#开始使用">开始使用</a> ·
-    <a href="#在桌面中工作">在桌面中工作</a> ·
-    <a href="#常见问题">常见问题</a> ·
-    <a href="docs/development.md">开发指南</a>
+    <a href="#get-started">Get started</a> ·
+    <a href="#working-in-the-desktop">Working in the desktop</a> ·
+    <a href="#troubleshooting">Troubleshooting</a> ·
+    <a href="docs/development.md">Development guide</a>
   </p>
 </div>
 
 ---
 
-Claude Haven 是一个面向 Claude Code 的桌面工作台。它在隔离的 Linux 桌面中提供 Claude Code、浏览器、终端和文件管理器，并让你选择本机项目文件夹作为工作区。
+Claude Haven is a desktop workspace for Claude Code. It provides Claude Code, a browser, a terminal, and a file manager inside an isolated Linux desktop, with a folder on your computer as the project workspace.
 
-macOS 现已支持 Apple Silicon（M 系列芯片）和 macOS 13 及更新版本，使用 Apple Virtualization.framework 启动应用内置的 Linux 系统。Windows x64 使用 WSL2。Linux 主机版暂不支持。
+macOS is supported on Apple Silicon (M-series) with macOS 13 or later. It uses Apple’s Virtualization.framework to run the Linux system bundled with the app. Windows x64 runs the desktop through WSL2. Linux hosts are not currently supported.
 
-## 开始使用
+## Get started
 
-### 1. 下载并安装
+### 1. Download and install
 
-前往 [GitHub Releases](https://github.com/KeithMorning/ClaudeVM/releases/latest)，下载与你的平台对应的安装包：Windows x64 安装包，或 Apple Silicon Mac 的 DMG。Mac 用户打开 DMG 后，将 Claude Haven 拖到 `Applications` 快捷方式中。
+Go to [GitHub Releases](https://github.com/KeithMorning/ClaudeVM/releases/latest) and download the installer for your platform: the Windows x64 installer or the DMG for Apple Silicon Mac. On Mac, open the DMG and drag Claude Haven to the `Applications` shortcut.
 
-### 2. 配置网络
+### 2. Configure your network
 
-首次打开应用后，进入「系统设置」：
+When you first open the app, go to **System Settings**:
 
-1. 在「网络连接」中选择本机的 Clash / Mihomo YAML 配置文件。
-2. 从配置里的节点列表选择一个出口节点，然后保存。
+1. Under **Network**, select a Clash / Mihomo YAML configuration file from your computer.
+2. Choose an egress node from its proxy list and save the settings.
 
-配置文件保存在本机。启动时应用会检查网络守卫和出口；检查未通过时，虚拟桌面不会进入就绪状态。请使用包含可用代理节点的配置文件。
+The configuration stays on your computer. At startup, Claude Haven checks the network guard and egress connection. The desktop will not be marked ready if these checks fail, so use a configuration with a working proxy node.
 
-### 3. 选择工作区
+### 3. Choose a workspace
 
-进入「工作区」，选择一个本机项目文件夹并保存。虚拟桌面可以直接读写此目录中的文件；请只共享你希望它访问的文件夹。
+Open **Workspace**, select a folder on your computer, and save it. The Linux desktop can read and write files in this folder. Only share folders you want the desktop to access.
 
-### 4. 启动桌面
+### 4. Start the desktop
 
-回到「虚拟桌面」，点击「启动虚拟环境」。Windows 首次启动时，应用会检查 WSL 2，并在缺少必要组件时引导配置。Mac 使用随应用提供的 Linux 系统，不需要安装 Lima、Docker 或另外下载系统镜像。首次启动可能需要一些时间，请保持应用打开并等待进度完成。
+Return to **Desktop** and click **Start virtual environment**. On Windows, the app checks WSL2 on first launch and guides you through setup if required components are missing. On Mac, the Linux system is included with the app; you do not need to install Lima or Docker or download a separate system image. The first launch can take a little while. Keep the app open until startup finishes.
 
-## 在桌面中工作
+## Working in the desktop
 
-- 在同一张 Linux 桌面中使用 Claude Code、Chrome、终端和文件管理器。
-- 中文输入使用 fcitx5 / Rime；支持与宿主机之间的文本复制粘贴。
-- 项目文件通过共享工作区读写。图片和其他文件也可放入共享目录，在两边访问。
-- 网络保护状态会显示在工作台中；遇到节点或出口检查错误时，先在「系统设置」中更换节点并保存，再回到工作台重试。
+- Use Claude Code, Chrome, a terminal, and a file manager in one Linux desktop.
+- Chinese input is provided by fcitx5 / Rime. Text can be copied between the host and the desktop.
+- Access project files through the shared workspace. You can also use it to move images and other files between the host and desktop.
+- The app shows the network protection status. If a node or egress check fails, choose and save another node in **System Settings**, then retry from **Desktop**.
 
-![Claude Haven 虚拟桌面运行界面](assets/screenshots/claude-haven-running.png)
+![Claude Haven Linux desktop](assets/screenshots/claude-haven-running.png)
 
-![Claude Haven 虚拟桌面中的浏览器](assets/screenshots/claude-haven-browser.png)
+![Browser running in the Claude Haven desktop](assets/screenshots/claude-haven-browser.png)
 
-## 常见问题
+## Troubleshooting
 
-**启动时提示 WSL 2 未就绪（Windows）**
-按应用中的提示配置 WSL 2。如果系统要求重启，重启后重新打开 Claude Haven 即可继续。
+**Windows says WSL2 is not ready**
 
-**第一次启动比较慢**
-首次启动需要初始化虚拟桌面和网络保护。等待进度完成；如果启动失败，应用会显示错误信息，可检查配置后重试。
+Follow the in-app steps to configure WSL2. If Windows asks you to restart, restart the computer and reopen Claude Haven to continue.
 
-**网络守卫无法通过检查**
-确认所选 YAML 中有可用节点、节点可以连接外网，然后在「网络连接」中重新选择并保存节点。守卫检查通过前，环境不会被标记为就绪。
+**The first launch is taking a while**
 
-**想自行检查 Claude 使用环境？**
-可以使用第三方 [Claude 使用环境自测](https://fuck-claude.vercel.app/)，查看时区、浏览器语言、字体和 WebRTC 等环境信号。它不是 Anthropic 官方工具，检测结果仅供参考，也不保证账号可用或不受限制。网站说明扫描时会发送访问 IP 所属地区和计数，不发送扫描结果。
+The app initializes the virtual desktop and network protection on first launch. Wait for the progress indicator to finish. If startup fails, check the displayed error and your settings, then try again.
 
-**项目文件在哪里？**
-项目文件保存在你选择的本机工作区文件夹中。虚拟桌面停止后，文件仍保留在该目录。
+**The network guard check failed**
 
-## 安全与隐私
+Make sure the selected YAML has a working node that can reach the internet. Select and save a node again under **Network**. The environment will not be marked ready until the guard check passes.
 
-- 共享工作区允许虚拟桌面读写所选目录中的文件。
-- Clash / Mihomo 配置保存在本机；提交问题报告前，请删除节点地址、密码、密钥和本地路径等个人信息。
+**Want to check your Claude environment?**
 
-## 参与项目
+Try the third-party [Claude environment checker](https://fuck-claude.vercel.app/) to inspect signals such as timezone, browser language, fonts, and WebRTC. It is not an Anthropic service, its results are informational only, and it cannot guarantee account access or prevent restrictions. The site says it sends your IP-derived region and a scan count, but not scan results.
 
-欢迎 Fork 本项目，也欢迎使用 AI 编程助手协助开发。请在提交前检查改动、说明改动目的和验证方式，并避免提交个人配置、密钥或其他敏感信息。遇到问题可提交 [Issue](https://github.com/KeithMorning/ClaudeVM/issues)。
+**Where are my project files?**
 
-开发环境准备、构建应用和 Linux 镜像的步骤见[开发指南](docs/development.md)。
+They remain in the local folder you selected as your workspace, including when the virtual desktop is stopped.
 
-## 许可
+**Why does the Mac data disk show a 2 GB capacity?**
 
-源码许可证见 [LICENSE](LICENSE)。随附第三方组件保留各自许可。
+The persistent `state.img` is a sparse file with a 2 GB logical capacity. It does not reserve 2 GB of physical storage when created; its actual disk usage grows as the virtual desktop writes data.
+
+## Security and privacy
+
+- The virtual desktop can read and write files in the workspace folder you selected.
+- Clash / Mihomo configuration is stored locally. Remove node addresses, passwords, keys, local paths, and other personal information before sharing a report.
+
+## Contributing
+
+Forks and contributions are welcome, including work assisted by AI coding tools. Review changes before submitting, describe their purpose and how you verified them, and do not commit personal configuration, credentials, or other sensitive data. For issues, open a [GitHub Issue](https://github.com/KeithMorning/ClaudeVM/issues).
+
+For development setup, app builds, and Linux image creation, see the [development guide](docs/development.md).
+
+## License
+
+See [LICENSE](LICENSE) for the source license. Bundled third-party components retain their respective licenses.
