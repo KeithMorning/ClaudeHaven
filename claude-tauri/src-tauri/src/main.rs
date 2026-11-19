@@ -37,7 +37,26 @@ struct WorkspaceConfig {
     yaml_path: String,
     node: String,
     workspace: String,
-    region: String,
+    timezone: String,
+    language: EnvironmentLanguage,
+}
+
+#[derive(Clone, Copy, Default, Deserialize, Serialize)]
+enum EnvironmentLanguage {
+    #[default]
+    #[serde(rename = "en-US")]
+    English,
+    #[serde(rename = "zh-CN")]
+    SimplifiedChinese,
+    #[serde(rename = "zh-TW")]
+    TraditionalChinese,
+}
+
+fn valid_timezone_setting(value: &str) -> bool {
+    value.is_empty() || value == "UTC" || (value.len() <= 128
+        && value.contains('/')
+        && value.split('/').all(|part| !part.is_empty()
+            && part.bytes().all(|c| c.is_ascii_alphanumeric() || b"_+-".contains(&c))))
 }
 
 fn config_path(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
@@ -66,16 +85,11 @@ fn config_from_legacy(raw: &[u8]) -> Option<WorkspaceConfig> {
             .unwrap_or("")
             .to_owned()
     };
-    let region = field("persona");
     Some(WorkspaceConfig {
         yaml_path: field("clashYamlPath"),
         node: field("selectedNode"),
         workspace: field("workspace"),
-        region: if region == "us" {
-            "us".into()
-        } else {
-            "tw-taipei".into()
-        },
+        ..Default::default()
     })
 }
 
@@ -90,10 +104,7 @@ fn load_config(app: tauri::AppHandle) -> Result<WorkspaceConfig, String> {
                 .map(|p| p.join("claude-desktop/config.json"))
                 .and_then(|p| std::fs::read(p).ok())
                 .and_then(|bytes| config_from_legacy(&bytes));
-            Ok(legacy.unwrap_or_else(|| WorkspaceConfig {
-                region: "tw-taipei".into(),
-                ..Default::default()
-            }))
+            Ok(legacy.unwrap_or_default())
         }
         Err(e) => Err(format!("配置文件无法读取：{e}")),
     }
@@ -103,8 +114,8 @@ fn load_config(app: tauri::AppHandle) -> Result<WorkspaceConfig, String> {
 fn save_config(app: tauri::AppHandle, config: WorkspaceConfig) -> Result<(), String> {
     static SAVE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
     let _lock = SAVE_LOCK.lock().map_err(|_| "配置保存暂时不可用。")?;
-    if !["tw-taipei", "us"].contains(&config.region.as_str()) {
-        return Err("请选择有效的地区。".into());
+    if !valid_timezone_setting(&config.timezone) {
+        return Err("请选择有效的时区。".into());
     }
     if !config.node.is_empty() {
         validate_exit_node(&config)?;
@@ -422,7 +433,7 @@ async fn start_runtime(app: tauri::AppHandle) -> Result<LaunchOutcome, String> {
 }
 
 #[tauri::command]
-async fn guard_status() -> Result<String, String> {
+async fn guard_status() -> Result<serde_json::Value, String> {
     #[cfg(windows)]
     {
         tauri::async_runtime::spawn_blocking(move || {
@@ -434,7 +445,7 @@ async fn guard_status() -> Result<String, String> {
             {
                 return Err("虚拟环境未运行。".into());
             }
-            runtime::read_guard_state()
+            runtime::read_guard_details()
         })
         .await
         .map_err(|e| format!("守卫状态检查中断：{e}"))?
@@ -864,7 +875,7 @@ mod tests {
         assert_eq!(config.yaml_path, "C:/x.yaml");
         assert_eq!(config.node, "node");
         assert_eq!(config.workspace, "C:/work");
-        assert_eq!(config.region, "us");
+        assert!(config.timezone.is_empty());
         assert!(!serde_json::to_string(&config).unwrap().contains("private"));
     }
 }

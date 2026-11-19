@@ -35,6 +35,7 @@ CHROME = 'google-chrome-stable'
 # 实测发出 `zh;q=0.9;q=0.8` 这种畸形头 —— 比原来的 en-US 更像伪造。
 # 原 Profile 的值就是 `en-US,en`，不带任何权重。
 LANGS = {
+    'zh_CN': ('zh-CN', 'zh-CN,zh,en-US,en', 'zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7'),
     'zh_TW': ('zh-TW', 'zh-TW,zh,en-US,en', 'zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7'),
     'ja_JP': ('ja-JP', 'ja-JP,ja,en-US,en', 'ja-JP,ja;q=0.9,en-US;q=0.8,en;q=0.7'),
     'de_DE': ('de-DE', 'de-DE,de,en-US,en', 'de-DE,de;q=0.9,en-US;q=0.8,en;q=0.7'),

@@ -2,7 +2,7 @@
 
 const $ = (id) => document.getElementById(id);
 const invoke = (name, args) => window.__TAURI__.core.invoke(name, args);
-let config = { yaml_path: '', node: '', workspace: '', region: 'tw-taipei' };
+let config = { yaml_path: '', node: '', workspace: '', timezone: '', language: 'en-US' };
 let checkGeneration = 0;
 let sessionStarted = false;
 let autoStartDone = false;
@@ -186,6 +186,7 @@ function showProtection(state) {
   $('guardIndicator').dataset.state = state;
   if ($('desktopStatus').textContent !== label) $('desktopStatus').textContent = label;
   $('liveLatency').hidden = state !== 'guarded' || !$('liveLatency').textContent;
+  if (state !== 'guarded') $('timezoneWarning').hidden = true;
 }
 
 function switchPage(page) {
@@ -282,7 +283,10 @@ function createSelect(select) {
   return { sync };
 }
 const nodeLatency = new Map();
-const selects = { nodeSelect: createSelect($('nodeSelect')), region: createSelect($('region')) };
+const selects = { nodeSelect: createSelect($('nodeSelect')) };
+for (const zone of Intl.supportedValuesOf('timeZone')) {
+  $('timezone').add(new Option(zone.replaceAll('_', ' '), zone));
+}
 
 async function showNodes(path, selected = '') {
   const select = $('nodeSelect');
@@ -357,7 +361,9 @@ async function save(message, nextConfig = config) {
         switchPage('home');
       }
     }
-    $(message).textContent = '设置已保存。';
+    $(message).textContent = message === 'environmentMessage'
+      ? '设置已保存，重启虚拟环境后生效。'
+      : '设置已保存。';
     if (!sessionStarted) void refreshStatus();
   }
   catch (error) { $(message).textContent = String(error); }
@@ -388,8 +394,18 @@ $('chooseWorkspace').addEventListener('click', async () => {
   try { const path = await invoke('choose_workspace'); if (path) { config.workspace = path; $('workspacePath').value = path; } }
   catch (error) { $('workspaceMessage').textContent = String(error); }
 });
-$('region').addEventListener('change', invalidateCheck);
-$('saveWorkspace').addEventListener('click', () => { config.region = $('region').value; save('workspaceMessage'); });
+$('saveWorkspace').addEventListener('click', () => { void save('workspaceMessage'); });
+$('saveEnvironment').addEventListener('click', () => {
+  void save('environmentMessage', {
+    ...config,
+    timezone: $('timezone').value,
+    language: $('environmentLanguage').value,
+  });
+});
+$('timezoneWarning').addEventListener('click', () => {
+  switchPage('system');
+  $('timezone').focus();
+});
 function toggleCheckPopover(show) {
   const popover = $('checkPopover');
   const next = show ?? popover.hidden;
@@ -463,8 +479,11 @@ async function loadConfig() {
     config = await invoke('load_config');
     $('yamlPath').value = config.yaml_path;
     $('workspacePath').value = config.workspace;
-    $('region').value = config.region || 'tw-taipei';
-    selects.region.sync();
+    if (config.timezone && !Array.from($('timezone').options).some(option => option.value === config.timezone)) {
+      $('timezone').add(new Option(config.timezone, config.timezone));
+    }
+    $('timezone').value = config.timezone || '';
+    $('environmentLanguage').value = config.language || 'en-US';
     if (config.yaml_path) {
       const selected = await showNodes(config.yaml_path, config.node);
       if (!selected) {
@@ -497,6 +516,7 @@ async function connectDesktop() {
   $('stopRuntime').hidden = false;
   lastGuardState = 'guarded';
   showProtection(lastGuardState);
+  void refreshGuard();
   $('topStatus').textContent = '运行中';
   void pollLiveLatency();
   invalidateCheck();
@@ -701,12 +721,23 @@ syncPowerButton();
 async function refreshGuard() {
   if (!sessionStarted || stoppedByUser) return;
   const generation = statusGeneration;
-  let state = 'unknown';
-  try { state = await invoke('guard_status'); } catch (_) { /* show unknown below */ }
+  let report;
+  try { report = await invoke('guard_status'); } catch (_) { /* show unknown below */ }
   if (!sessionStarted || stoppedByUser || generation !== statusGeneration) return;
+  const state = report?.state || 'unknown';
   if (lastGuardState && state !== lastGuardState) invalidateCheck();
   lastGuardState = state;
   showProtection(Object.hasOwn(protectionLabels, state) ? state : 'unknown');
+  const { active_timezone: active, exit_timezone: exit, timezone_source: source } = report || {};
+  const location = [report?.exit_country, report?.exit_city].filter(Boolean).join(' · ');
+  const warning = $('timezoneWarning');
+  const fallback = source === 'fallback';
+  const mismatch = Boolean(active && exit && active !== exit);
+  warning.textContent = fallback ? '请选择时区' : '时区与代理出口不一致';
+  warning.hidden = state !== 'guarded' || !(fallback || mismatch);
+  $('timezoneDetails').textContent = active
+    ? `当前时区 ${active} · ${exit ? `出口时区 ${exit}` : '未识别出口时区'}${location ? `（${location}）` : ''}${fallback ? '。可手动选择时区。' : ''}`
+    : '';
   $('topStatus').textContent = state === 'guarded' ? '运行中' : '网络需要注意';
   $('topDot').classList.toggle('available', state === 'guarded');
 }

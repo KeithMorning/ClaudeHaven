@@ -321,7 +321,29 @@ fn guard_failure_message(reason: &str) -> &'static str {
 
 #[cfg(windows)]
 pub(crate) fn read_guard_state() -> Result<String, String> {
-    let script = "set -eu\ntest -s /run/claude-vm/net-guard.pid\nkill -0 \"$(cat /run/claude-vm/net-guard.pid)\"\ncat /run/claude-vm/net-guard.state\n";
+    read_guard_report().map(|(state, _)| state)
+}
+
+#[cfg(windows)]
+pub(crate) fn read_guard_details() -> Result<serde_json::Value, String> {
+    let (state, raw) = read_guard_report()?;
+    let field = |key: &str| raw.lines().find_map(|line| {
+        let (name, value) = line.split_once('=')?;
+        (name == key).then_some(value)
+    });
+    Ok(serde_json::json!({
+        "state": state,
+        "exit_country": if state == "guarded" { field("exit_country") } else { None },
+        "exit_city": if state == "guarded" { field("exit_city") } else { None },
+        "exit_timezone": if state == "guarded" { field("exit_timezone") } else { None },
+        "active_timezone": field("active_timezone"),
+        "timezone_source": field("timezone_source"),
+    }))
+}
+
+#[cfg(windows)]
+fn read_guard_report() -> Result<(String, String), String> {
+    let script = "set -eu\ntest -s /run/claude-vm/net-guard.pid\nkill -0 \"$(cat /run/claude-vm/net-guard.pid)\"\ncat /run/claude-vm/net-guard.state\nif test -r /run/claude-vm/session-timezone; then cat /run/claude-vm/session-timezone; fi\n";
     let raw = guest_script(script)?;
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -336,7 +358,7 @@ pub(crate) fn read_guard_state() -> Result<String, String> {
             return Err("网络保护条件未全部满足。".into());
         }
     }
-    Ok(state)
+    Ok((state, raw))
 }
 
 fn protection_prerequisites_met(status: &serde_json::Value) -> bool {
@@ -472,8 +494,8 @@ impl WslLaunch {
 impl LaunchOperations for WslLaunch {
     fn validate(&mut self) -> Result<(), String> {
         crate::validate_exit_node(&self.config)?;
-        if !["tw-taipei", "us"].contains(&self.config.region.as_str()) {
-            return Err("请选择有效地区。".into());
+        if !crate::valid_timezone_setting(&self.config.timezone) {
+            return Err("请选择有效的时区。".into());
         }
         if !Path::new(&self.config.workspace).is_dir() {
             return Err("请选择可访问的工作区。".into());
@@ -605,13 +627,13 @@ impl LaunchOperations for WslLaunch {
 
     fn spawn_entrypoint(&mut self) -> Result<(), String> {
         use std::process::{Command, Stdio};
-        let (tz, lang, chrome) = if self.config.region == "us" {
-            ("America/Los_Angeles", "en_US.UTF-8", "en-US")
-        } else {
-            ("Asia/Taipei", "zh_TW.UTF-8", "zh-TW")
+        let (lang, chrome) = match self.config.language {
+            crate::EnvironmentLanguage::English => ("en_US.UTF-8", "en-US"),
+            crate::EnvironmentLanguage::SimplifiedChinese => ("zh_CN.UTF-8", "zh-CN"),
+            crate::EnvironmentLanguage::TraditionalChinese => ("zh_TW.UTF-8", "zh-TW"),
         };
         let env = [
-            format!("TZ={tz}"),
+            format!("HAVEN_TIMEZONE={}", self.config.timezone),
             format!("LANG={lang}"),
             format!("LC_ALL={lang}"),
             format!("CHROME_LANG={chrome}"),
@@ -1112,7 +1134,7 @@ mod tests {
             yaml_path: field("clashYamlPath"),
             node: field("selectedNode"),
             workspace: field("workspace"),
-            region: field("persona"),
+            ..Default::default()
         };
         let config = std::fs::read(
             PathBuf::from(std::env::var_os("APPDATA").expect("APPDATA"))

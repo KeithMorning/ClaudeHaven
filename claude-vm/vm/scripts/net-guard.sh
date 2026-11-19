@@ -57,6 +57,7 @@ write_state() {
     echo "exit_ip=${EXIT_IP:-}"
     echo "exit_country=${EXIT_COUNTRY:-}"
     echo "exit_city=${EXIT_CITY:-}"
+    echo "exit_timezone=${EXIT_TIMEZONE:-}"
     echo "direct_leak=${DIRECT_LEAK:-unknown}"
     echo "preflight=${PREFLIGHT:-unknown}"
     echo "locked=${LOCKED:-0}"
@@ -133,7 +134,7 @@ fi
 preflight() {
   # Validate the local protection prerequisites before any external request.
   DIRECT_LEAK=unknown
-  EXIT_IP=''; EXIT_COUNTRY=''; EXIT_CITY=''; EXIT_ORG=''
+  EXIT_IP=''; EXIT_COUNTRY=''; EXIT_CITY=''; EXIT_ORG=''; EXIT_TIMEZONE=''
   if ! pgrep -x mihomo >/dev/null 2>&1 || ! grep -qE '^ *Meta:' /proc/net/dev 2>/dev/null; then
     PF_REASON=leak-detected
     PF_MSG="代理内核或 TUN 网卡不可用，已拒绝放行。"
@@ -152,7 +153,8 @@ preflight() {
   local T; T="$(mktemp -d)"
   curl -fsS --noproxy '*' --connect-timeout 3 --max-time 10 https://ipinfo.io/json > "$T/via" 2>/dev/null || true
   mapfile -t INFO < <(python3 - "$T/via" <<'PY'
-import ipaddress, json, sys
+import ipaddress, json, re, sys
+from pathlib import Path
 try:
     with open(sys.argv[1], encoding='utf-8') as f:
         data = json.load(f)
@@ -161,6 +163,16 @@ try:
         raise ValueError('not a public address')
     for value in (str(ip), data.get('country', ''), data.get('city', ''), data.get('org', '')):
         print(str(value or '').replace('\n', ' ').replace('\r', ' '))
+    zone = data.get('timezone')
+    if isinstance(zone, str) and re.fullmatch(r'[A-Za-z0-9_+-]+(?:/[A-Za-z0-9_+-]+)*', zone):
+        root = Path('/usr/share/zoneinfo')
+        try:
+            path = (root / zone).resolve(strict=True)
+            with path.open('rb') as f:
+                if f.read(4) == b'TZif':
+                    print(path.relative_to(root))
+        except (OSError, ValueError):
+            pass
 except (OSError, ValueError, TypeError):
     pass
 PY
@@ -170,6 +182,7 @@ PY
   EXIT_COUNTRY="${INFO[1]:-}"
   EXIT_CITY="${INFO[2]:-}"
   EXIT_ORG="${INFO[3]:-}"
+  EXIT_TIMEZONE="${INFO[4]:-}"
   if [ -z "$EXIT_IP" ]; then
     PF_REASON=proxy-unreachable
     PF_MSG="无法获取有效的公网出口信息，请检查节点或稍后重试。"

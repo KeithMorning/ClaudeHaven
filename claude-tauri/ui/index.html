@@ -29,6 +29,7 @@
               <span class="guard-lock" aria-hidden="true"></span>
               <span id="desktopStatus" role="status">网络保护未启用</span>
               <span class="footer-latency" id="liveLatency" hidden></span>
+              <button class="text-button timezone-warning" id="timezoneWarning" type="button" hidden></button>
             </div>
             <div class="footer-check">
               <button id="backgroundCheck" class="background-check" type="button" aria-controls="checkPopover" aria-expanded="false" hidden>
@@ -55,6 +56,15 @@
           <div id="latencyResult" class="latency-result" aria-live="polite"></div>
           <div class="settings-footer"><span id="networkMessage" role="status">配置仅保存在本机。</span><button id="saveNetwork" class="secondary-button" type="button">保存设置</button></div>
         </div>
+        <section class="settings-card environment-card" aria-labelledby="environmentTitle">
+          <div class="settings-heading"><div><h2 id="environmentTitle">虚拟环境语言与时区</h2><p>保存后，停止并重新启动虚拟环境即可生效。</p></div></div>
+          <label for="environmentLanguage">虚拟机与浏览器首选语言</label>
+          <select id="environmentLanguage"><option value="en-US">English</option><option value="zh-CN">简体中文</option><option value="zh-TW">繁體中文</option></select>
+          <label for="timezone">时区</label>
+          <select id="timezone"><option value="">首次根据代理出口自动设置</option><option value="UTC">UTC</option></select>
+          <p class="field-help" id="timezoneDetails" role="status"></p>
+          <div class="settings-footer"><span id="environmentMessage" role="status"></span><button id="saveEnvironment" class="secondary-button" type="button">保存设置</button></div>
+        </section>
         <section class="settings-card reset-card" aria-labelledby="resetTitle">
           <div class="settings-heading"><div><span class="section-kicker">02 / ENVIRONMENT</span><h2 id="resetTitle">重置系统</h2><p>删除当前 Linux 虚拟环境，之后可重新启动一个干净环境。</p></div><div class="card-icon reset-icon" aria-hidden="true">↺</div></div>
           <div class="reset-warning"><strong>此操作会删除虚拟环境中的所有数据</strong><p>包括 Claude 登录状态、虚拟环境内的文件和已安装内容。Windows 共享工作区及本应用保存的网络配置会保留。</p></div>
@@ -67,7 +77,6 @@
         <div class="heading"><div><div class="eyebrow"><span></span> LOCAL WORKSPACE</div><h1>工作区<span class="heading-period">.</span></h1><p>管理主机与虚拟环境共享的文件。</p></div></div>
         <div class="settings-card"><div class="settings-heading"><div><span class="section-kicker">02 / WORKSPACE</span><h2>共享目录</h2><p>选择一个文件夹，供虚拟环境访问。</p></div><div class="card-icon">▧</div></div>
           <label for="workspacePath">工作区路径</label><div class="field-row"><input id="workspacePath" type="text" readonly placeholder="选择文件夹"><button id="chooseWorkspace" class="secondary-button" type="button">选择文件夹</button></div>
-          <label for="region">地区与语言</label><select id="region"><option value="tw-taipei">中国台湾 · 台北</option><option value="us">美国 · 洛杉矶</option></select>
           <p class="field-help">支持双向文本复制；终端中使用 Ctrl+Shift+C / Ctrl+Shift+V。图片与文件请通过共享工作区传递。</p>
           <div class="settings-footer"><span id="workspaceMessage" role="status">虚拟环境将能访问此文件夹中的内容。</span><button id="saveWorkspace" class="secondary-button" type="button">保存设置</button></div>
         </div>

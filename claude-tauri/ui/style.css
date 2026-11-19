@@ -118,3 +118,7 @@ main{min-height:0;overflow:hidden}
 .reset-dialog-error{min-height:20px;margin-top:8px;color:#e9aa88;font-size:11px;line-height:1.5}
 .reset-dialog-actions{display:flex;justify-content:flex-end;gap:9px;margin-top:11px}
 .reset-dialog-actions .secondary-button{min-height:36px}
+
+.environment-card { margin-top: 16px; }
+.timezone-warning { color: #f0b775; padding: 2px 6px; white-space: nowrap; }
+.timezone-warning[hidden] { display: none; }

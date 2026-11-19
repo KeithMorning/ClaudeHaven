@@ -14,6 +14,7 @@ case "${CHROME_LANG:-}" in
   zh-TW|ja-JP|de-DE|en-GB|en-US) : ;;
   *)
     case "${LANG:-en_US.UTF-8}" in
+      zh_CN*) CHROME_LANG="zh-CN" ;;
       zh_TW*) CHROME_LANG="zh-TW" ;;
       ja_JP*) CHROME_LANG="ja-JP" ;;
       de_DE*) CHROME_LANG="de-DE" ;;

@@ -13,18 +13,12 @@ if [ ! -e /usr/local/bin/claude ] && [ -x /usr/local/lib/nodejs/node-v20.18.1-li
   ln -sf /usr/local/lib/nodejs/node-v20.18.1-linux-x64/bin/claude /usr/local/bin/claude 2>/dev/null || true
 fi
 
-# 1) 系统时区（与代理/账号地区一致 → check-cc 时区维度）
-#    注意：WSL 每次启动后会把 Windows 宿主时区同步进 /etc/localtime，
-#    且同步时机可能在 init 之后，会覆盖这里刚写入的值。故在开头几秒内重复校准。
+# WSL 可能在启动早期同步宿主时区。设置需要在桌面进程继承 TZ 前完成。
 apply_tz() {
   [ -n "${TZ:-}" ] || return 0
   ln -snf "/usr/share/zoneinfo/$TZ" /etc/localtime 2>/dev/null || true
   echo "$TZ" > /etc/timezone 2>/dev/null || true
 }
-apply_tz
-(
-  for _ in 1 2 3 4 5 6 7 8; do sleep 1; apply_tz; done
-) >/dev/null 2>&1 &
 
 # 1.5) 语言环境
 #     镜像里只预生成了 en_US / en_GB / ja_JP / de_DE。台北画像要 zh_TW.UTF-8，
@@ -87,6 +81,7 @@ fi
 NET_GUARD="${NET_GUARD:-strict}"
 export NET_GUARD
 if [ -x /opt/scripts/net-guard.sh ]; then
+  rm -f /run/claude-vm/net-guard.state /run/claude-vm/session-timezone
   /opt/scripts/net-guard.sh &
   NET_GUARD_PID=$!
   echo "[claude-vm] 网络守卫已启动（pid=$NET_GUARD_PID, mode=$NET_GUARD）"
@@ -94,6 +89,48 @@ else
   # 脚本没同步成功时不能假装安全：宁可让检查报告报红，也不要静默裸奔。
   echo "[claude-vm] 严重：net-guard.sh 缺失，网络未受保护！请重新启动以同步脚本"
 fi
+
+# 手动设置优先。仅在没有已保存时区时等待本轮守卫预检，不发出额外请求。
+valid_timezone() {
+  [[ "$1" =~ ^[A-Za-z0-9_+-]+(/[A-Za-z0-9_+-]+)*$ ]] &&
+    [ "$(head -c 4 "/usr/share/zoneinfo/$1" 2>/dev/null)" = TZif ]
+}
+timezone_cache=/opt/config/detected-timezone
+mkdir -p /run/claude-vm
+timezone_source=manual
+if valid_timezone "${HAVEN_TIMEZONE:-}"; then
+  TZ="$HAVEN_TIMEZONE"
+else
+  timezone_source=auto
+  TZ="$(cat "$timezone_cache" 2>/dev/null || true)"
+  if ! valid_timezone "$TZ"; then
+    TZ=''
+    guard_state=/run/claude-vm/net-guard.state
+    for _ in $(seq 1 60); do
+      if [ -s "$guard_state" ]; then
+        TZ=$(awk -F= '$0 == "state=guarded" { ok=1 } $1 == "exit_timezone" { zone=$2 } END { if (ok) print zone }' "$guard_state")
+        break
+      fi
+      [ -n "${NET_GUARD_PID:-}" ] && kill -0 "$NET_GUARD_PID" 2>/dev/null || break
+      sleep 0.2
+    done
+    if valid_timezone "$TZ"; then
+      printf '%s\n' "$TZ" > "$timezone_cache.tmp"
+      mv -f "$timezone_cache.tmp" "$timezone_cache"
+    else
+      TZ=UTC
+      timezone_source=fallback
+    fi
+  fi
+fi
+export TZ
+apply_tz
+(
+  for _ in $(seq 1 8); do sleep 1; apply_tz; done
+) >/dev/null 2>&1 &
+zone_path=$(readlink -f "/usr/share/zoneinfo/$TZ")
+printf 'active_timezone=%s\ntimezone_source=%s\n' "${zone_path#/usr/share/zoneinfo/}" "$timezone_source" > /run/claude-vm/session-timezone.tmp
+mv -f /run/claude-vm/session-timezone.tmp /run/claude-vm/session-timezone
 
 # 2.5) 工作区：WSL 已 automount Windows 盘符，把宿主工作区软链到 /workspace
 if [ -n "$WORKSPACE" ] && [ -d "$WORKSPACE" ] && [ ! -e /workspace ]; then
