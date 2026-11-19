@@ -590,6 +590,18 @@ chmod 644 /opt/config/runtime-env
 mkdir -p /run/claude-vm
 printf '%s\n' "$DISPLAY_MODE" > /run/claude-vm/ready
 
+# On the native Mac VM, read Chrome's startup files out of SquashFS into
+# the guest's page cache. Do this once in the background at low CPU priority.
+# The cache is reclaimable and warming it does not open Chrome or its profile.
+if mountpoint -q /var/lib/haven-data && [ -r /opt/google/chrome/chrome ]; then
+  (
+    cd /opt/google/chrome || exit 0
+    shopt -s nullglob
+    exec nice -n 15 cat -- chrome *.pak icudtl.dat *snapshot*.bin \
+      libEGL.so libGLESv2.so libvk_swiftshader.so
+  ) >/dev/null 2>&1 &
+fi
+
 echo "[claude-vm] 就绪（串流桌面）。noVNC: ${NOVNC_BIND:-127.0.0.1}:${NOVNC_PORT:-6080}"
 echo "[claude-vm] 工作区已挂载到 /workspace"
 # wait 会一直等到最后一个后台子进程结束；上面显式放了 sleep infinity
