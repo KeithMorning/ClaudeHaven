@@ -4,4 +4,4 @@
 
 在已安装 Docker 的 Linux 或 WSL 环境中运行 `./build-rootfs.sh`，默认输出到 `../claude-tauri/runtime/rootfs.tar.gz`。脚本也接受构建上下文和输出路径参数。
 
-Tauri 启动时会同步并校验 `vm/scripts/` 和必要资源，不需要为了更新这些脚本重建镜像。完整的网络保护和隐私边界见[网络检查审计](../docs/network-check-audit.md)。
+Tauri 启动时会同步并校验 `vm/scripts/` 和必要资源，不需要为了更新这些脚本重建镜像。

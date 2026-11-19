@@ -70,4 +70,4 @@ Mac 直接挂载应用内的只读压缩系统盘。Linux 将改动写入 `nativ
 
 ## Windows 构建不变
 
-Windows 继续使用 Tauri + WSL2 和 Windows rootfs，按[仓库开发说明](../README.md#快速开始)操作。macOS 的 Swift 虚拟机助手和 Apple Virtualization.framework 配置只在 macOS 构建中使用，不会替换 Windows 的运行时。
+Windows 继续使用 Tauri + WSL2 和 Windows rootfs，按[Windows 开发指南](development.md#windows-x64-开发)操作。macOS 的 Swift 虚拟机助手和 Apple Virtualization.framework 配置只在 macOS 构建中使用，不会替换 Windows 的运行时。

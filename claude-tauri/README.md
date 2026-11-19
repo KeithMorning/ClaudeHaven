@@ -6,7 +6,7 @@ Tauri 2 桌面应用。Windows x64 通过 WSL2 运行 Linux 桌面；Apple Silic
 
 ## Windows 开发
 
-Windows 需要 Node.js、Rust MSVC 工具链、C++ Build Tools、WebView2 和 WSL2。开发时将 WSL rootfs 放在 `runtime/rootfs.tar.gz`；该运行时镜像不提交到 Git。Windows 启动与构建步骤见[仓库 README](../README.md#快速开始)。
+Windows 需要 Node.js、Rust MSVC 工具链、C++ Build Tools、WebView2 和 WSL2。开发时将 WSL rootfs 放在 `runtime/rootfs.tar.gz`；该运行时镜像不提交到 Git。Windows 启动与构建步骤见[开发指南](../docs/development.md#windows-x64-开发)。
 
 程序会保留已有 `claude-vm` WSL 发行版，并在首次使用时读取旧应用配置以迁移工作区设置。关闭窗口会收进系统托盘；从托盘选择退出才会停止环境。
 
