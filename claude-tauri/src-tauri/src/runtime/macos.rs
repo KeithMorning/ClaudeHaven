@@ -1,7 +1,7 @@
 //! Native Apple Silicon VM lifecycle. The guest control channel uses a private Unix socket.
 use std::{
     fs::{self, File, OpenOptions},
-    io::{self, BufRead, BufReader, Read, Seek, SeekFrom, Write},
+    io::{self, BufRead, BufReader, Read, Write},
     os::unix::{
         fs::{DirBuilderExt, OpenOptionsExt},
         net::UnixStream,
@@ -33,9 +33,9 @@ pub fn available() -> bool {
 
 pub fn resources_ready(root: &Path) -> bool {
     [
-        "kernel",
+        "kernel.tar.xz",
         "initrd",
-        "system.img.gz",
+        "system.squashfs",
         "image-version",
         "haven-vm",
     ]
@@ -46,7 +46,7 @@ pub fn resources_ready(root: &Path) -> bool {
 }
 
 pub fn registered(data: &Path) -> bool {
-    data.join("data.img").is_file()
+    data.join("state.img").is_file()
 }
 
 pub fn running() -> bool {
@@ -93,55 +93,6 @@ fn exec_with_input(args: &[&str], input: &str) -> Result<Output, String> {
     })
 }
 
-fn stage_system(image: &Path, target: &Path, version: &[u8]) -> io::Result<()> {
-    let marker = target.with_extension("version");
-    if target.is_file() && fs::read(&marker).is_ok_and(|saved| saved == version) {
-        return Ok(());
-    }
-    let tmp = target.with_extension("tmp");
-    let mut output = OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .mode(0o600)
-        .open(&tmp)?;
-    let mut unzip = Command::new("/usr/bin/gzip")
-        .arg("-dc")
-        .arg(image)
-        .stdout(Stdio::piped())
-        .spawn()?;
-    let result = (|| {
-        let mut input = BufReader::with_capacity(1024 * 1024, unzip.stdout.take().unwrap());
-        let mut size = 0;
-        loop {
-            let block = input.fill_buf()?;
-            let count = block.len();
-            if count == 0 {
-                break;
-            }
-            if block.iter().all(|byte| *byte == 0) {
-                output.seek(SeekFrom::Current(count as i64))?;
-            } else {
-                output.write_all(block)?;
-            }
-            size += count as u64;
-            input.consume(count);
-        }
-        output.set_len(size)?;
-        output.sync_all()
-    })();
-    if result.is_err() {
-        let _ = unzip.kill();
-    }
-    let status = unzip.wait()?;
-    result?;
-    if !status.success() {
-        return Err(io::Error::other("无法解压内置 Linux 镜像"));
-    }
-    fs::rename(tmp, target)?;
-    fs::write(marker, version)
-}
-
 pub fn prepare(
     config: &crate::WorkspaceConfig,
     root: &Path,
@@ -156,6 +107,9 @@ pub fn prepare(
     let deadline = Instant::now() + Duration::from_secs(60);
     while running() && Instant::now() < deadline {
         if exec(&["/bin/true"]).is_ok_and(|o| o.status.success()) {
+            if let Some(session) = SESSION.lock().unwrap().as_ref() {
+                let _ = fs::remove_file(session.socket_dir.join("kernel"));
+            }
             let now = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .map_err(|e| e.to_string())?;
@@ -209,22 +163,16 @@ fn prepare_vm(
         .mode(0o700)
         .create(&data_path)?;
     let native = root.join("native");
-    let system = data_path.join("system.img");
     progress("mac-image");
-    stage_system(
-        &native.join("system.img.gz"),
-        &system,
-        &fs::read(native.join("image-version"))?,
-    )?;
-    progress("mac-boot");
-    let persistent = data_path.join("data.img");
+    let persistent = data_path.join("state.img");
     match OpenOptions::new()
         .write(true)
         .create_new(true)
         .mode(0o600)
         .open(&persistent)
     {
-        Ok(file) => file.set_len(8 * 1024 * 1024 * 1024)?,
+        // The file is sparse. Only blocks written by the guest occupy host storage.
+        Ok(file) => file.set_len(2 * 1024 * 1024 * 1024)?,
         Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {}
         Err(e) => return Err(e),
     }
@@ -235,10 +183,28 @@ fn prepare_vm(
         .as_nanos();
     let socket_dir = PathBuf::from(format!("/tmp/haven-{}-{nonce:x}", std::process::id()));
     fs::DirBuilder::new().mode(0o700).create(&socket_dir)?;
+    let kernel = socket_dir.join("kernel");
+    let unpack_kernel = || -> io::Result<()> {
+        let file = OpenOptions::new().write(true).create_new(true).mode(0o600).open(&kernel)?;
+        let status = Command::new("/usr/bin/tar")
+            .arg("-xOf")
+            .arg(native.join("kernel.tar.xz"))
+            .stdout(file)
+            .status()?;
+        if !status.success() {
+            return Err(io::Error::other("无法解压 Linux 内核"));
+        }
+        Ok(())
+    };
+    if let Err(error) = unpack_kernel() {
+        let _ = fs::remove_dir_all(&socket_dir);
+        return Err(error);
+    }
+    progress("mac-boot");
     let child = Command::new(native.join("haven-vm"))
-        .arg(native.join("kernel"))
+        .arg(kernel)
         .arg(native.join("initrd"))
-        .arg(system)
+        .arg(native.join("system.squashfs"))
         .arg(persistent)
         .arg(workspace)
         .arg(root)
@@ -255,7 +221,7 @@ fn prepare_vm(
             })
         }
         Err(error) => {
-            let _ = fs::remove_dir(&socket_dir);
+            let _ = fs::remove_dir_all(&socket_dir);
             return Err(error);
         }
     }

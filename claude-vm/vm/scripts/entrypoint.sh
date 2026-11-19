@@ -392,7 +392,7 @@ if [ -n "$_cb_dir" ]; then
   for _cand in "$_cb_dir/bin/claude.exe" \
                "$_cb_dir/node_modules/@anthropic-ai/claude-code-linux-x64/claude"; do
     [ -f "$_cand" ] || continue
-    chmod +x "$_cand" 2>/dev/null || true
+    [ -x "$_cand" ] || chmod +x "$_cand" 2>/dev/null || true
     ln -sf "$_cand" /usr/local/bin/claude
     if timeout 20 claude --version >/tmp/claude-ver 2>&1 && grep -qE '^[0-9]+\.[0-9]+' /tmp/claude-ver; then
       echo "[claude-vm] Claude Code $(head -1 /tmp/claude-ver)"
@@ -511,7 +511,9 @@ report_startup input
 
 INPUT_METHOD="${INPUT_METHOD:-off}"
 if [ "$INPUT_METHOD" = "rime" ]; then
-  /opt/scripts/rime-setup.sh || echo "[claude-vm] 输入法安装失败，本次不启用"
+  if [ "${HAVEN_PREINSTALLED_INPUT:-0}" != 1 ]; then
+    /opt/scripts/rime-setup.sh || echo "[claude-vm] 输入法安装失败，本次不启用"
+  fi
   if command -v fcitx5 >/dev/null 2>&1; then
     pkill -x fcitx5 2>/dev/null || true
     # D-Bus 会话总线：fcitx5 的前端/面板/探活全走它，没有它 fcitx5 直接起不来

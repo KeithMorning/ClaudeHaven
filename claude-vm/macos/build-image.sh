@@ -7,13 +7,42 @@ out=$(realpath -m "${2:?output directory required}")
 here=$(dirname "$(realpath "$0")")
 version=$(uname -r)
 tmp=$(mktemp -d "${TMPDIR:-/var/tmp}/haven-build.XXXXXXXX")
-trap 'rm -rf "$tmp"' EXIT
+cleanup() {
+    for mount in "$root/dev" "$root/proc"; do
+        if mountpoint -q "$mount" && ! umount "$mount"; then
+            printf 'Build mount still active: %s\n' "$mount" >&2
+            return
+        fi
+    done
+    rm -rf "$tmp"
+}
+trap cleanup EXIT
 root=$tmp/root
 mkdir -p "$root" "$out"
 tar --numeric-owner -xzf "$rootfs" -C "$root"
 find "$root" -maxdepth 1 -type f -name '*.core' -delete
 rm -f "$root/.dockerenv"
-install -d "$root/usr/local/lib/haven" "$root/workspace" "$root/mnt/haven-runtime"
+# Install the same input method dependencies used by rime-setup before packaging.
+# Seed /root on the read-only layer so each workspace inherits the configuration.
+rm -f "$root/etc/resolv.conf"
+printf 'nameserver 1.1.1.1\n' > "$root/etc/resolv.conf"
+mkdir -p "$root/dev" "$root/proc" "$root/opt/assets/rime"
+mount --bind /dev "$root/dev"
+mount -t proc proc "$root/proc"
+chroot "$root" /usr/bin/env DEBIAN_FRONTEND=noninteractive /bin/sh -c \
+    'apt-get update && apt-get -o Dpkg::Use-Pty=0 install -y --no-install-recommends fcitx5 fcitx5-rime fcitx5-frontend-gtk3 fcitx5-module-xorg rime-data-stroke librime-bin lxterminal fonts-hanazono && fc-cache -f && rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*.deb'
+install -m 644 "$here/../vm/assets/rime/wanxiang-pure.zip" "$root/opt/assets/rime/wanxiang-pure.zip"
+install -m 755 "$here/../vm/scripts/rime-setup.sh" "$root/tmp/haven-rime-setup.sh"
+chroot "$root" /bin/bash /tmp/haven-rime-setup.sh
+test -f "$root/root/.local/share/fcitx5/rime/.wanxiang-v18.1.8"
+rime_dir=/root/.local/share/fcitx5/rime
+chroot "$root" /usr/bin/rime_deployer --build "$rime_dir" /usr/share/rime-data
+test -s "$root$rime_dir/build/wanxiang_pure.prism.bin"
+test -s "$root$rime_dir/build/wanxiang_pure.table.bin"
+rm -f "$root/tmp/haven-rime-setup.sh" "$root/opt/assets/rime/wanxiang-pure.zip"
+umount "$root/proc"
+umount "$root/dev"
+install -d "$root/usr/local/lib/haven" "$root/workspace" "$root/mnt/haven-runtime" "$root/var/lib/haven-data"
 install -m 755 "$here/guest-init.sh" "$root/usr/local/lib/haven/init.sh"
 install -m 644 "$here/guest.py" "$root/usr/local/lib/haven/guest.py"
 install -m 755 "$here/dhcp.sh" "$root/usr/local/lib/haven/dhcp.sh"
@@ -54,13 +83,13 @@ depmod -b "$root" "$version"
 printf '127.0.0.1 localhost claude-haven\n::1 localhost ip6-localhost ip6-loopback\n' > "$root/etc/hosts"
 rm -f "$root/etc/resolv.conf"
 printf 'nameserver 1.1.1.1\n' > "$root/etc/resolv.conf"
-truncate -s 6G "$tmp/system.img"
-mkfs.ext4 -q -F -N 180000 -d "$root" "$tmp/system.img"
+bash "$here/trim-system.sh" "$root"
+chroot "$root" fc-cache -f
 # Ubuntu may wrap the compressed ARM64 Image in an EFI unified kernel image.
 kernel="/boot/vmlinuz-$version"
 objcopy --dump-section ".linux=$tmp/linux-section" "$kernel" "$tmp/efi-copy" 2>/dev/null || true
 if [[ -s $tmp/linux-section ]]; then kernel="$tmp/linux-section"; fi
-python3 - "$kernel" "$out/kernel.tmp" <<'PYK'
+python3 - "$kernel" "$tmp/kernel" <<'PYK'
 import gzip, pathlib, struct, subprocess, sys
 data = pathlib.Path(sys.argv[1]).read_bytes()
 if data[4:8] == b"zimg":
@@ -79,9 +108,4 @@ if data[56:60] != b"ARM\x64":
     raise SystemExit("Expected a raw ARM64 Linux Image")
 pathlib.Path(sys.argv[2]).write_bytes(data)
 PYK
-cp "/boot/initrd.img-$version" "$out/initrd.tmp"
-gzip -1c "$tmp/system.img" > "$out/system.img.gz.tmp"
-mv "$out/kernel.tmp" "$out/kernel"
-mv "$out/initrd.tmp" "$out/initrd"
-mv "$out/system.img.gz.tmp" "$out/system.img.gz"
-(cd "$out" && sha256sum kernel initrd system.img.gz > image-version.tmp && mv image-version.tmp image-version)
+bash "$here/pack-system.sh" "$root" "$out" "$tmp/kernel"

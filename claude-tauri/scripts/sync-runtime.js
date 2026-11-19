@@ -78,6 +78,11 @@ function main() {
     const s = path.join(VM, from);
     if (!fs.existsSync(s)) { console.warn(`[sync-scripts] 缺少资源 ${from}`); continue; }
     const d = path.join(ASSET_DST, to);
+    // The Mac system image already contains the Rime dictionary and fonts.
+    if (process.platform === 'darwin' && (to.startsWith('fonts/') || to === 'rime/wanxiang-pure.zip')) {
+      fs.rmSync(d, { force: true });
+      continue;
+    }
     fs.mkdirSync(path.dirname(d), { recursive: true });
     fs.copyFileSync(s, d);
     a++;

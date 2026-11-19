@@ -45,6 +45,11 @@ if [ "$#" -eq 0 ]; then
   set -- https://ip.net.coffee/claude/
 fi
 
+chrome_guest_flags=()
+if [ -d /var/lib/haven-data ]; then
+  chrome_guest_flags=(--use-gl=angle --use-angle=swiftshader --disk-cache-dir=/tmp/claude-haven-chrome-cache)
+fi
+
 exec google-chrome-stable \
   --lang="$CHROME_LANG" \
   --no-first-run \
@@ -53,5 +58,6 @@ exec google-chrome-stable \
   --start-maximized \
   --test-type \
   --force-webrtc-ip-handling-policy=disable_non_proxied_udp \
+  "${chrome_guest_flags[@]}" \
   $SANDBOX_FLAG \
   "$@"

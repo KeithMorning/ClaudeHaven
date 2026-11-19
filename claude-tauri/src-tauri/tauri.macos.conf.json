@@ -11,9 +11,9 @@
     },
     "resources": {
       "../runtime/rootfs.tar.gz": null,
-      "../runtime/native/kernel": "runtime/native/kernel",
+      "../runtime/native/kernel.tar.xz": "runtime/native/kernel.tar.xz",
       "../runtime/native/initrd": "runtime/native/initrd",
-      "../runtime/native/system.img.gz": "runtime/native/system.img.gz",
+      "../runtime/native/system.squashfs": "runtime/native/system.squashfs",
       "../runtime/native/image-version": "runtime/native/image-version",
       "../runtime/native/haven-vm": "runtime/native/haven-vm"
     }

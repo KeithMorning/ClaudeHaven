@@ -979,8 +979,16 @@ fn main() {
             clipboard_read_text,
             clipboard_write_text
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running Claude Haven");
+        .build(tauri::generate_context!())
+        .expect("error while building Claude Haven")
+        .run(|app, event| {
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Reopen { .. } = event {
+                show_main_window(app);
+            }
+            #[cfg(not(target_os = "macos"))]
+            let _ = (app, event);
+        });
 }
 
 #[cfg(test)]

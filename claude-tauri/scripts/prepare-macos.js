@@ -9,7 +9,7 @@ const path = require('path');
 const project = path.resolve(__dirname, '..');
 const native = path.join(project, 'native');
 const runtime = path.join(project, 'runtime', 'native');
-for (const file of ['kernel', 'initrd', 'system.img.gz', 'image-version']) {
+for (const file of ['kernel.tar.xz', 'initrd', 'system.squashfs', 'image-version']) {
   if (!fs.existsSync(path.join(runtime, file))) {
     console.error('Missing the native ARM64 VM image. Build it with claude-vm/macos/build-image.sh.');
     process.exit(1);

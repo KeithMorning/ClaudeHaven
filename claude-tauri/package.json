@@ -6,6 +6,7 @@
     "sync-runtime": "node scripts/sync-runtime.js",
     "dev": "npm run sync-runtime && node scripts/prepare-macos.js && tauri dev",
     "build": "npm run sync-runtime && node scripts/prepare-macos.js && tauri build",
+    "package:macos": "bash scripts/package-macos-dmg.sh",
     "test": "cargo test --manifest-path src-tauri/Cargo.toml"
   },
   "devDependencies": {

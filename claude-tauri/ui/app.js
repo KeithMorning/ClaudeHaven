@@ -546,7 +546,7 @@ const macStartupStages = {
 function showMacStartupStage(event) {
   if (event === 'mac-first-start') {
     $('startupTitle').textContent = '首次启动';
-    $('startupNote').textContent = '首次会解压镜像并初始化桌面，请保持应用打开。';
+    $('startupNote').textContent = '首次会初始化本地数据和桌面，请保持应用打开。';
     $('startupNote').hidden = false;
     return;
   }

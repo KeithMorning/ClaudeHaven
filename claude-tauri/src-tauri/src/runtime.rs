@@ -1303,7 +1303,6 @@ impl LaunchOperations for MacLaunch {
         for name in [
             "novnc/desktop.html",
             "novnc/novnc-1.7.0.tgz",
-            "rime/wanxiang-pure.zip",
         ] {
             if !self.asset_files.contains_key(name) {
                 return Err(format!("缺少必需的运行时资源：{name}"));
@@ -1431,7 +1430,7 @@ impl LaunchOperations for MacLaunch {
 mkdir -p /run/claude-vm
 rm -f /run/claude-vm/startup-exit /run/claude-vm/startup-stage
 nohup bash -c '"$@"; code=$?; printf "%s\n" "$code" > /run/claude-vm/startup-exit' haven-startup \
-    env HAVEN_STARTUP_PROGRESS=1 HAVEN_TIMEZONE={} LANG={lang} LC_ALL={lang} CHROME_LANG={chrome} \
+    env HAVEN_STARTUP_PROGRESS=1 HAVEN_PREINSTALLED_INPUT=1 HAVEN_TIMEZONE={} LANG={lang} LC_ALL={lang} CHROME_LANG={chrome} \
     TUN_NODE={} WORKSPACE=/workspace NET_GUARD=strict NET_GUARD_STRICT_REGION=1 INPUT_METHOD=rime \
     NOVNC_PORT=6080 /opt/scripts/entrypoint.sh </dev/null >/tmp/claude-haven.log 2>&1 &"#,
             shell_quote(&self.config.timezone),

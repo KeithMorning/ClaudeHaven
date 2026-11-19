@@ -131,10 +131,10 @@ func run() throws {
     config.memorySize = 4 * 1024 * 1024 * 1024
     let loader = VZLinuxBootLoader(kernelURL: URL(fileURLWithPath: args[1]))
     loader.initialRamdiskURL = URL(fileURLWithPath: args[2])
-    loader.commandLine = "root=/dev/vda rw rootwait console=hvc0 net.ifnames=0 rd.neednet=0"
+    loader.commandLine = "console=hvc0 net.ifnames=0"
     config.bootLoader = loader
-    config.storageDevices = try [args[3], args[4]].map {
-        let attachment = try VZDiskImageStorageDeviceAttachment(url: URL(fileURLWithPath: $0), readOnly: false)
+    config.storageDevices = try zip([args[3], args[4]], [true, false]).map { path, readOnly in
+        let attachment = try VZDiskImageStorageDeviceAttachment(url: URL(fileURLWithPath: path), readOnly: readOnly)
         return VZVirtioBlockDeviceConfiguration(attachment: attachment)
     }
     config.directorySharingDevices = [
