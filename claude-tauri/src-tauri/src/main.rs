@@ -386,29 +386,6 @@ fn network_groups(report: &serde_json::Value) -> Vec<serde_json::Value> {
         .collect()
 }
 
-fn recovery_checks_pass(report: &serde_json::Value) -> bool {
-    if report.get("runtimeUp").and_then(|value| value.as_i64()) != Some(1) {
-        return false;
-    }
-    let groups = network_groups(report);
-    let items: Vec<_> = groups
-        .iter()
-        .flat_map(|group| {
-            group
-                .get("items")
-                .and_then(|v| v.as_array())
-                .into_iter()
-                .flatten()
-        })
-        .collect();
-    ["网络保护", "出口地区"].iter().all(|name| {
-        items.iter().any(|item| {
-            item.get("label").and_then(|v| v.as_str()) == Some(*name)
-                && item.get("status").and_then(|v| v.as_str()) == Some("pass")
-        })
-    })
-}
-
 #[tauri::command]
 async fn check_network(app: tauri::AppHandle) -> Result<Vec<serde_json::Value>, String> {
     #[cfg(windows)]
@@ -499,21 +476,27 @@ async fn start_runtime(app: tauri::AppHandle) -> Result<LaunchOutcome, String> {
             let _lock = lock;
             let _bootstrap_lock = bootstrap::controller::lock_for_runtime(&app)?;
             let mut operations = runtime::WslLaunch::new(config, directory, resources);
-            match runtime::launch_with_progress(&mut operations, |stage| {
+            let result = runtime::launch_with_progress(&mut operations, |stage| {
                 let _ = app.emit("startup-progress", stage);
-            }) {
-                Ok(()) => {
-                    if let Some(path) = wsl_ready_marker(&app) {
-                        if let Some(parent) = path.parent() { let _ = std::fs::create_dir_all(parent); }
-                        let _ = std::fs::write(path, b"verified");
+            });
+            let spawned = operations.was_spawned();
+            if let Some(path) = wsl_ready_marker(&app) {
+                if spawned {
+                    if let Some(parent) = path.parent() {
+                        let _ = std::fs::create_dir_all(parent);
                     }
-                    Ok(LaunchOutcome { ok: true, needs_stop: false, error: String::new() })
-                }
-                Err(error) => {
-                    if let Some(path) = wsl_ready_marker(&app) { let _ = std::fs::remove_file(path); }
-                    Ok(LaunchOutcome { ok: false, needs_stop: operations.was_spawned(), error })
+                    let _ = std::fs::write(path, b"verified");
+                } else if result.is_err() {
+                    let _ = std::fs::remove_file(path);
                 }
             }
+            let needs_stop = result.is_err() && spawned
+                && runtime::guard_session_running().unwrap_or(true);
+            Ok(LaunchOutcome {
+                ok: result.is_ok(),
+                needs_stop,
+                error: result.err().unwrap_or_default(),
+            })
         })
         .await
         .map_err(|e| format!("启动操作中断：{e}"))?
@@ -550,12 +533,7 @@ async fn guard_status() -> Result<serde_json::Value, String> {
     #[cfg(windows)]
     {
         tauri::async_runtime::spawn_blocking(move || {
-            let running = runtime::run_wsl(&["--list", "--running", "--quiet"])?;
-            if !running.status.success()
-                || !runtime::output_text(&running)
-                    .lines()
-                    .any(|s| s.trim().eq_ignore_ascii_case("claude-vm"))
-            {
+            if !runtime::guard_session_running()? {
                 return Err("虚拟环境未运行。".into());
             }
             runtime::read_guard_details()
@@ -579,48 +557,13 @@ async fn restore_session(app: tauri::AppHandle) -> Result<(), String> {
         let resources = runtime_root(&app)?;
         tauri::async_runtime::spawn_blocking(move || {
             let _lock = lock;
-            let running = runtime::run_wsl(&["--list", "--running", "--quiet"])?;
-            if !running.status.success()
-                || !runtime::output_text(&running)
-                    .lines()
-                    .any(|line| line.trim().eq_ignore_ascii_case("claude-vm"))
-            {
+            if !runtime::guard_session_running()? {
                 return Err("虚拟环境未运行。".into());
             }
             runtime::verify_existing_desktop()?;
             runtime::ensure_clipboard_bridge()?;
             runtime::ensure_guard_running(&resources)?;
-            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(25);
-            loop {
-                if runtime::read_guard_state().is_ok_and(|state| state == "guarded") {
-                    break;
-                }
-                if std::time::Instant::now() >= deadline {
-                    return Err(
-                        "网络保护尚未通过检查。请检查节点后点击刷新重试；原有会话仍在运行。".into(),
-                    );
-                }
-                std::thread::sleep(std::time::Duration::from_millis(500));
-            }
-            runtime::sync_diagnostics(&resources)?;
-            let output = runtime::run_wsl(&[
-                "-d",
-                "claude-vm",
-                "-u",
-                "root",
-                "--",
-                "python3",
-                "/opt/scripts/check-network.py",
-            ])?;
-            if !output.status.success() {
-                return Err("无法检查已有会话的网络状态，请稍后重试。".into());
-            }
-            let raw = String::from_utf8_lossy(&output.stdout).replace('\0', "");
-            let report: serde_json::Value =
-                serde_json::from_str(raw.trim()).map_err(|_| "无法解析已有会话的网络检查结果。")?;
-            if !recovery_checks_pass(&report) {
-                return Err("已有会话的网络保护或出口地区尚未通过检查，请核对网络后重试。".into());
-            }
+            runtime::wait_for_guard()?;
             let config = load_config(app.clone())?;
             runtime::sync_workspace(Path::new(&config.workspace))?;
             Ok(())
@@ -636,8 +579,7 @@ async fn restore_session(app: tauri::AppHandle) -> Result<(), String> {
             let _lock = lock;
             runtime::verify_existing_desktop()?;
             runtime::ensure_clipboard_bridge()?;
-            if runtime::read_guard_state()? != "guarded" { return Err("网络守卫尚未确认保护状态。".into()); }
-            Ok(())
+            runtime::wait_for_guard()
         }).await.map_err(|e| e.to_string())?
 
     }
@@ -1023,19 +965,6 @@ mod tests {
         assert_eq!(groups.len(), 2);
         assert_eq!(groups[0]["id"], "network");
         assert_eq!(groups[1]["id"], "consistency");
-    }
-
-    #[test]
-    fn recovery_requires_both_current_protection_and_supported_exit() {
-        let mut report = serde_json::json!({"runtimeUp": 1, "groups": [{"id":"network", "items": [
-            {"label":"网络保护", "status":"pass"}, {"label":"出口地区", "status":"pass"}
-        ]}]});
-        assert!(recovery_checks_pass(&report));
-        report["groups"][0]["items"][1]["status"] = "warn".into();
-        assert!(!recovery_checks_pass(&report));
-        report["groups"][0]["items"][1]["status"] = "pass".into();
-        report["runtimeUp"] = 0.into();
-        assert!(!recovery_checks_pass(&report));
     }
 
     #[test]

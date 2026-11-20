@@ -613,6 +613,7 @@ dependencies = [
  "sha2 0.10.9",
  "tauri",
  "tauri-build",
+ "tokio",
  "windows-sys 0.61.2",
 ]
 
@@ -4537,6 +4538,7 @@ dependencies = [
  "libc",
  "mio",
  "pin-project-lite",
+ "signal-hook-registry",
  "socket2",
  "windows-sys 0.61.2",
 ]

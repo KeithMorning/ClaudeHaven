@@ -247,6 +247,29 @@ pub(crate) fn run_wsl(args: &[&str]) -> Result<std::process::Output, String> {
 }
 
 #[cfg(windows)]
+fn run_wsl_bounded(args: &[&str], limit: std::time::Duration) -> Result<std::process::Output, String> {
+    tauri::async_runtime::block_on(async {
+        let mut command = tokio::process::Command::new(wsl_exe_path());
+        command.args(args).creation_flags(0x08000000).kill_on_drop(true);
+        tokio::time::timeout(limit, command.output())
+            .await
+            .map_err(|_| "WSL 未及时响应网络保护检查。".to_string())?
+            .map_err(|error| format!("无法执行 WSL：{error}"))
+    })
+}
+
+#[cfg(windows)]
+pub(crate) fn guard_session_running() -> Result<bool, String> {
+    let running = run_wsl_bounded(&["--list", "--running", "--quiet"], std::time::Duration::from_secs(4))?;
+    if !running.status.success() {
+        return Err("无法确认虚拟环境是否仍在运行。".into());
+    }
+    Ok(crate::bootstrap::decode_windows_output(&running.stdout)
+        .lines()
+        .any(|line| line.trim().eq_ignore_ascii_case("claude-vm")))
+}
+
+#[cfg(windows)]
 fn wsl_exe_path() -> PathBuf {
     let system_root = std::env::var_os("SystemRoot").unwrap_or_else(|| "C:\\Windows".into());
     PathBuf::from(system_root).join("System32").join("wsl.exe")
@@ -283,6 +306,26 @@ fn guest_script(script: &str) -> Result<String, String> {
         return Err(format!("虚拟环境操作失败：{}", output_text(&result)));
     }
     Ok(output_text(&result))
+}
+
+#[cfg(any(windows, target_os = "macos"))]
+fn guard_script(script: &str) -> Result<String, String> {
+    #[cfg(windows)]
+    {
+        let encoded = bash_command(script);
+        let result = run_wsl_bounded(
+            &["-d", "claude-vm", "-u", "root", "--", "bash", "-c", &encoded],
+            std::time::Duration::from_secs(5),
+        )?;
+        if !result.status.success() {
+            return Err("无法读取虚拟机内的网络守卫状态。".into());
+        }
+        // WSL may emit host warnings to stderr even after a successful command.
+        // Only stdout belongs to the guard's machine-readable response.
+        Ok(crate::bootstrap::decode_windows_output(&result.stdout).trim().to_owned())
+    }
+    #[cfg(target_os = "macos")]
+    guest_script(script)
 }
 
 #[cfg(windows)]
@@ -336,7 +379,7 @@ pub(crate) fn parse_guard_state(raw: &str, now: u64) -> Result<String, String> {
 fn guard_failure_message(reason: &str) -> &'static str {
     match reason.trim() {
         "proxy-unreachable" => {
-            "网络守卫无法通过所选节点获取出口信息。请检查节点、配置和网络后重试。"
+            "无法通过所选节点获取出口信息。请检查节点，或在系统设置更换节点后重新启动环境。"
         }
         "exit-region-risk" => "出口地区未通过网络守卫检查，请更换节点后重试。",
         "exit-region-unknown" => "无法确认出口地区或支持地区名单不可用，请检查网络后重试。",
@@ -350,7 +393,7 @@ fn guard_failure_message(reason: &str) -> &'static str {
     }
 }
 
-#[cfg(any(windows, target_os = "macos"))]
+#[cfg(all(windows, test))]
 pub(crate) fn read_guard_state() -> Result<String, String> {
     read_guard_report().map(|(state, _)| state)
 }
@@ -375,21 +418,60 @@ pub(crate) fn read_guard_details() -> Result<serde_json::Value, String> {
 #[cfg(any(windows, target_os = "macos"))]
 fn read_guard_report() -> Result<(String, String), String> {
     let script = "set -eu\ntest -s /run/claude-vm/net-guard.pid\nkill -0 \"$(cat /run/claude-vm/net-guard.pid)\"\ncat /run/claude-vm/net-guard.state\nif test -r /run/claude-vm/session-timezone; then cat /run/claude-vm/session-timezone; fi\n";
-    let raw = guest_script(script)?;
+    let raw = guard_script(script)?;
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_err(|e| e.to_string())?
         .as_secs();
     let state = parse_guard_state(&raw, now)?;
     if state == "guarded" {
-        let prerequisites = guest_script("set -eu\npgrep -x mihomo >/dev/null\ngrep -qE '^ *Meta:' /proc/net/dev\ntest \"$(awk '/^nameserver[[:space:]]/{print $2}' /etc/resolv.conf)\" = 127.0.0.1\npython3 /opt/scripts/net-guard.py status\n")?;
+        let country = raw.lines().find_map(|line| line.strip_prefix("exit_country=")).unwrap_or("");
+        let prerequisites = guard_script(&format!(
+            "set -eu\npgrep -x mihomo >/dev/null\ngrep -qE '^ *Meta:' /proc/net/dev\ntest \"$(awk '/^nameserver[[:space:]]/{{print $2}}' /etc/resolv.conf)\" = 127.0.0.1\npython3 /opt/scripts/claude-supported-regions.py {}\ntimeout 3s python3 /opt/scripts/net-guard.py status\n",
+            shell_quote(country)
+        ))?;
+        let (region, prerequisites) = prerequisites.split_once('\n').ok_or("无法读取网络保护条件。")?;
         let status: serde_json::Value =
-            serde_json::from_str(&prerequisites).map_err(|_| "无法读取网络保护条件。")?;
+            serde_json::from_str(prerequisites).map_err(|_| "无法读取网络保护条件。")?;
         if !protection_prerequisites_met(&status) {
             return Err("网络保护条件未全部满足。".into());
         }
+        match region.trim() {
+            "supported" => {}
+            "unsupported" => return Err(guard_failure_message("exit-region-risk").into()),
+            _ => return Err(guard_failure_message("exit-region-unknown").into()),
+        }
     }
     Ok((state, raw))
+}
+
+#[cfg(any(windows, target_os = "macos"))]
+pub(crate) fn wait_for_guard() -> Result<(), String> {
+    use std::time::{Duration, Instant};
+    let deadline = Instant::now() + Duration::from_secs(30);
+    loop {
+        #[cfg(windows)]
+        if !guard_session_running()? {
+            return Err("虚拟环境在网络检查期间已停止，请重新启动。".into());
+        }
+        let error = match read_guard_report() {
+            Ok((state, _)) if state == "guarded" => return Ok(()),
+            Ok((state, _)) if state == "off" => return Err("网络保护已关闭，请重新启动虚拟环境。".into()),
+            Ok((_, raw)) => {
+                let reason = raw.lines().find_map(|line| line.strip_prefix("reason=")).unwrap_or("");
+                if matches!(reason, "exit-region-risk" | "exit-region-unknown") {
+                    return Err(guard_failure_message(reason).into());
+                }
+                guard_failure_message(reason).into()
+            }
+            Err(error) => error,
+        };
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return Err(format!("网络保护检查超时。{error}"));
+        }
+        std::thread::sleep(remaining.min(Duration::from_millis(700)));
+    }
 }
 
 pub(crate) fn protection_prerequisites_met(status: &serde_json::Value) -> bool {
@@ -706,29 +788,7 @@ impl LaunchOperations for WslLaunch {
     }
 
     fn verify_guard(&mut self) -> Result<(), String> {
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
-        let mut blocked = false;
-        while std::time::Instant::now() < deadline {
-            if let Ok(state) = read_guard_state() {
-                if state == "guarded" {
-                    return Ok(());
-                }
-                if state == "blocked" || state == "off" {
-                    blocked = true;
-                    break;
-                }
-            }
-            std::thread::sleep(std::time::Duration::from_millis(700));
-        }
-        let reason = if blocked {
-            guest_script("sed -n 's/^reason=//p' /run/claude-vm/net-guard.state | grep -E '^(proxy-unreachable|exit-region-risk|exit-region-unknown|dns-not-ready|split-exit|anthropic-unreachable|leak-detected|lock-failed)$' || true").unwrap_or_default()
-        } else {
-            String::new()
-        };
-        Err(format!(
-            "{} 环境不会被标记为就绪。",
-            guard_failure_message(&reason)
-        ))
+        wait_for_guard()
     }
 }
 
@@ -1414,29 +1474,7 @@ impl LaunchOperations for MacLaunch {
     }
 
     fn verify_guard(&mut self) -> Result<(), String> {
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
-        let mut blocked = false;
-        while std::time::Instant::now() < deadline {
-            if let Ok(state) = read_guard_state() {
-                if state == "guarded" {
-                    return Ok(());
-                }
-                if state == "blocked" || state == "off" {
-                    blocked = true;
-                    break;
-                }
-            }
-            std::thread::sleep(std::time::Duration::from_millis(700));
-        }
-        let reason = if blocked {
-            guest_script("sed -n 's/^reason=//p' /run/claude-vm/net-guard.state | grep -E '^(proxy-unreachable|exit-region-risk|exit-region-unknown|dns-not-ready|split-exit|anthropic-unreachable|leak-detected|lock-failed)$' || true").unwrap_or_default()
-        } else {
-            String::new()
-        };
-        Err(format!(
-            "{} 环境不会被标记为就绪。",
-            guard_failure_message(&reason)
-        ))
+        wait_for_guard()
     }
     fn ensure_stopped_and_port_free(&mut self) -> Result<(), String> {
         if macos::running() { return Err("已有 Mac 环境正在运行，请先停止。".into()); }

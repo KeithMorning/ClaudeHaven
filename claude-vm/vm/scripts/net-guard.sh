@@ -129,7 +129,7 @@ fi
 
 # ------------------------------------------------------------
 # [1] 预检 —— 此时直连已断，所有探测只能经代理，探测本身不会泄漏真实出口
-#     全部并发，整体耗时约等于最慢的那一发（~10s），不串行叠加。
+#     出口信息请求最多等待 10 秒。
 # ------------------------------------------------------------
 preflight() {
   # Validate the local protection prerequisites before any external request.
@@ -243,39 +243,32 @@ while sleep "$INTERVAL"; do
   R="$(python3 "$PY" lock "${LOCK_ARG}" 2>&1)"
   if printf '%s' "$R" | grep -q '"locked": *true'; then LOCKED=1; else LOCKED=0; fi
 
-  # 裸 curl：流量自然进 TUN。加 -x 反而会去测一个不存在的代理端口。
-  CODE="$(curl -s -o /dev/null -w '%{http_code}' --connect-timeout 2 --max-time 6 \
-          http://cp.cloudflare.com/generate_204 2>/dev/null)"
-  # 内核或 TUN 网卡消失时，即使 204 还能通（例如宿主网关侧接管），也必须判失败。
-  if ! pgrep -x mihomo >/dev/null 2>&1 || ! grep -qE '^ *Meta:' /proc/net/dev 2>/dev/null; then
-    CODE=000
-  fi
-  if [ "$CODE" = "204" ] || [ "$CODE" = "200" ]; then
-    CONSEC_FAIL=0
-    if [ "$PREFLIGHT" != "pass" ] || [ "$(sed -n 's/^state=//p' "$STATE" 2>/dev/null)" != "guarded" ]; then
-      # 代理刚恢复（或上次预检失败）：重新完整预检一次再放行状态
-      preflight
-      PF=$?
-      if [ "$PF" -eq 0 ]; then PREFLIGHT=pass; else PREFLIGHT=fail; fi
-      log "内核链路恢复，重跑预检：$PF_REASON"
-    fi
-    if [ "$PREFLIGHT" = "pass" ] && [ "$LOCKED" = "1" ]; then
+  if [ "$PREFLIGHT" = "pass" ] && [ "$LOCKED" = "1" ] &&
+     pgrep -x mihomo >/dev/null 2>&1 && grep -qE '^ *Meta:' /proc/net/dev 2>/dev/null &&
+     [ "$(awk '/^nameserver[[:space:]]/{print $2}' /etc/resolv.conf)" = "127.0.0.1" ]; then
+    CODE="$(curl -s --noproxy '*' -o /dev/null -w '%{http_code}' --connect-timeout 2 --max-time 6 \
+            http://cp.cloudflare.com/generate_204 2>/dev/null)"
+    if [ "$CODE" = "204" ] || [ "$CODE" = "200" ]; then
+      CONSEC_FAIL=0
       write_state guarded ok "$PF_MSG" "exit_org=\"${EXIT_ORG:-}\""
+      continue
+    fi
+    CONSEC_FAIL=$((CONSEC_FAIL + 1))
+    [ "$CONSEC_FAIL" -lt 2 ] && continue
+  fi
+
+  # An unavailable health endpoint must not prevent a full exit check or recovery.
+  previous_preflight="$PREFLIGHT"
+  if preflight; then
+    PREFLIGHT=pass
+    CONSEC_FAIL=0
+    write_state guarded ok "$PF_MSG" "exit_org=\"${EXIT_ORG:-}\""
+  else
+    PREFLIGHT=fail
+    if [ "$previous_preflight" = "pass" ] && [ "$PF_REASON" = "proxy-unreachable" ]; then
+      write_state proxy_down "$PF_REASON" "$PF_MSG"
     else
       write_state blocked "$PF_REASON" "$PF_MSG"
-    fi
-  else
-    CONSEC_FAIL=$((CONSEC_FAIL + 1))
-    if [ "$CONSEC_FAIL" -ge 2 ]; then
-      # 关键：这里**不做任何断网动作**。路由表里没有直连，网络本来就是断的。
-      if [ "$PREFLIGHT" != "pass" ]; then
-        # 预检本来就没过（代理没开 Allow LAN / 出口风险 / 多源分叉 …），
-        # 保留那条具体原因，别让通用的 proxy_down 把诊断信息冲掉。
-        write_state blocked "$PF_REASON" "$PF_MSG"
-      else
-        write_state proxy_down proxy-unreachable \
-          "内核链路已断开（连续 ${CONSEC_FAIL} 次探活失败），网络维持切断状态，不会回落到本机直连。请检查选中的节点后等待自动恢复。"
-      fi
     fi
   fi
 done

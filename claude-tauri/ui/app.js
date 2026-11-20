@@ -6,6 +6,7 @@ let config = { yaml_path: '', node: '', workspace: '', timezone: '', language: '
 let checkGeneration = 0;
 let sessionStarted = false;
 let autoStartDone = false;
+let manualStartRequested = false;
 let stoppedByUser = false;
 let statusGeneration = 0;
 let nodeConfigIssue = '';
@@ -511,7 +512,7 @@ async function loadConfig() {
   }
 }
 
-async function connectDesktop() {
+function connectDesktop() {
   sessionStarted = true;
   resetClipboard();
   if ($('desktopFrame').getAttribute('src') !== 'http://127.0.0.1:6080/desktop.html?autoconnect=1') {
@@ -523,13 +524,14 @@ async function connectDesktop() {
   $('stopRuntime').hidden = false;
   lastGuardState = 'guarded';
   showProtection(lastGuardState);
-  void refreshGuard();
   $('topStatus').textContent = '运行中';
   void pollLiveLatency();
   invalidateCheck();
   $('backgroundCheck').hidden = false;
-  await refreshGuard();
-  if (lastGuardState === 'guarded') void runNetworkCheck();
+  const generation = statusGeneration;
+  void refreshGuard().then(() => {
+    if (sessionStarted && generation === statusGeneration && lastGuardState === 'guarded') void runNetworkCheck();
+  });
 }
 
 const macStartupStages = {
@@ -592,11 +594,8 @@ async function startSession() {
       }
       if (payload === 'desktop-starting') $('startupDetail').textContent = '正在打开虚拟桌面';
       if (payload === 'desktop-ready') {
-        $('desktopFrame').src = 'http://127.0.0.1:6080/desktop.html?autoconnect=1';
-        $('desktopFrame').hidden = false;
-        $('stageContent').hidden = true;
         $('startupTitle').textContent = '桌面已准备好';
-        $('startupDetail').textContent = '正在确认网络保护，完成后即可操作';
+        $('startupDetail').textContent = '正在确认代理出口和断网保护';
       }
     });
     const outcome = await invoke('start_runtime');
@@ -604,7 +603,7 @@ async function startSession() {
       $('stopRuntime').hidden = !outcome.needs_stop;
       throw new Error(outcome.error || '启动未完成。');
     }
-    await connectDesktop();
+    connectDesktop();
   } catch (error) {
     $('startupOverlay').hidden = true;
     $('desktopFrame').hidden = true;
@@ -629,7 +628,9 @@ function triggerAutoStart(status, manual) {
 }
 
 async function refreshStatus(manual = false) {
-  if (runtimeInFlight || $('refresh').disabled) return;
+  if (runtimeInFlight) return;
+  if (manual) manualStartRequested = true;
+  if ($('refresh').disabled) return;
   const button = $('refresh');
   button.disabled = true;
   const generation = statusGeneration;
@@ -642,6 +643,8 @@ async function refreshStatus(manual = false) {
     latestHostProbe = status.host_probe || null;
     renderBootstrap(boot, latestHostProbe);
     if (generation !== statusGeneration || runtimeInFlight) return;
+    manual = manualStartRequested;
+    manualStartRequested = false;
     $('topDot').classList.toggle('available', status.wsl_available);
     if (!sessionStarted) $('topStatus').textContent = status.wsl_available ? `${backendName} 可用` : `${backendName} 未就绪`;
     $('installWsl').hidden = isMac || status.wsl_available;
@@ -679,7 +682,7 @@ async function refreshStatus(manual = false) {
       $('startupOverlay').hidden = false;
       try {
         await invoke('restore_session');
-        await connectDesktop();
+        connectDesktop();
       } catch (error) {
         $('startupOverlay').hidden = true;
         let latest = null;
@@ -711,7 +714,10 @@ async function refreshStatus(manual = false) {
     $('stageDescription').textContent = '请确认应用正在 Tauri 中运行。';
     if (!sessionStarted) showProtection('unknown');
     $('runtimeDetail').textContent = '无法读取 WSL 状态。';
-  } finally { button.disabled = false; }
+  } finally {
+    manualStartRequested = false;
+    button.disabled = false;
+  }
 }
 
 $('refresh').addEventListener('click', () => { void refreshStatus(); });
