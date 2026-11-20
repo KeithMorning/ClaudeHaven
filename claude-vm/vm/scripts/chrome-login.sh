@@ -42,7 +42,7 @@ fi
 
 # 从桌面打开浏览器时展示常用页面；显式传入的链接用于登录等外部调用。
 if [ "$#" -eq 0 ]; then
-  set -- https://ip.net.coffee/claude/
+  set -- https://fuck-claude.vercel.app/
 fi
 
 chrome_guest_flags=()

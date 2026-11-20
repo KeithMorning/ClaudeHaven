@@ -9,6 +9,10 @@ const path = require('path');
 const crypto = require('crypto');
 
 const BASE = path.join(os.homedir(), '.config', 'google-chrome');
+const DEFAULT_BOOKMARKS = [
+  { name: 'Claude', url: 'https://claude.ai/' },
+  { name: 'Net.Coffee IP 检测', url: 'https://ip.net.coffee/claude/' },
+];
 
 function patch(file) {
   try {
@@ -16,7 +20,7 @@ function patch(file) {
     j.profile = j.profile || {};
     j.profile.exit_type = 'Normal';
     j.profile.exited_cleanly = true;
-    j.homepage = 'https://ip.net.coffee/claude/';
+    j.homepage = 'https://fuck-claude.vercel.app/';
     j.homepage_is_newtabpage = false;
     j.browser = j.browser || {};
     j.browser.show_home_button = true;
@@ -30,7 +34,7 @@ function patch(file) {
   }
 }
 
-function ensureClaudeBookmark(profile) {
+function ensureDefaultBookmarks(profile) {
   const file = path.join(profile, 'Bookmarks');
   try {
     const bookmarks = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : {
@@ -43,34 +47,38 @@ function ensureClaudeBookmark(profile) {
     };
     const bar = bookmarks.roots && bookmarks.roots.bookmark_bar;
     if (!bar || !Array.isArray(bar.children)) return;
-    const containsClaude = (node) => {
-      if (node.type === 'url' && /^https:\/\/claude\.ai\/?$/i.test(node.url || '')) return true;
-      return Array.isArray(node.children) && node.children.some(containsClaude);
-    };
-    if (Object.values(bookmarks.roots).some(containsClaude)) return;
+    const normalizeUrl = (url) => url.replace(/\/$/, '').toLowerCase();
+    const existingUrls = new Set();
     let maxId = 3n;
-    const scanIds = (node) => {
+    const scan = (node) => {
+      if (node.type === 'url' && typeof node.url === 'string') {
+        existingUrls.add(normalizeUrl(node.url));
+      }
       if (/^\d+$/.test(String(node.id || ''))) {
         const id = BigInt(node.id);
         if (id > maxId) maxId = id;
       }
-      if (Array.isArray(node.children)) node.children.forEach(scanIds);
+      if (Array.isArray(node.children)) node.children.forEach(scan);
     };
-    Object.values(bookmarks.roots).forEach(scanIds);
-    bar.children.push({
-      date_added: String((BigInt(Date.now()) + 11644473600000n) * 1000n),
-      guid: crypto.randomUUID(),
-      id: String(maxId + 1n),
-      name: 'Claude',
-      type: 'url',
-      url: 'https://claude.ai/',
-    });
+    Object.values(bookmarks.roots).forEach(scan);
+    const missing = DEFAULT_BOOKMARKS.filter(({ url }) => !existingUrls.has(normalizeUrl(url)));
+    if (!missing.length) return;
+    for (const bookmark of missing) {
+      maxId += 1n;
+      bar.children.push({
+        ...bookmark,
+        date_added: String((BigInt(Date.now()) + 11644473600000n) * 1000n),
+        guid: crypto.randomUUID(),
+        id: String(maxId),
+        type: 'url',
+      });
+    }
     fs.mkdirSync(profile, { recursive: true });
     const tmp = `${file}.claude-vm.tmp`;
     fs.writeFileSync(tmp, JSON.stringify(bookmarks, null, 2));
     fs.renameSync(tmp, file);
   } catch (error) {
-    console.error(`[chrome-prefs] 无法添加 Claude 收藏：${error.message}`);
+    console.error(`[chrome-prefs] 无法添加默认收藏：${error.message}`);
   }
 }
 
@@ -85,5 +93,5 @@ if (fs.existsSync(BASE)) {
 }
 if ((!hasDefault || !fs.existsSync(path.join(BASE, 'Default', 'Preferences'))) &&
     patch(path.join(BASE, 'Default', 'Preferences'))) n++;
-ensureClaudeBookmark(path.join(BASE, 'Default'));
+ensureDefaultBookmarks(path.join(BASE, 'Default'));
 if (process.env.VERBOSE) console.log(`[chrome-prefs] 已复位 ${n} 个 profile`);
