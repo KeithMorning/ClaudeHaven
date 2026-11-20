@@ -1,4 +1,6 @@
 //! Native Apple Silicon VM lifecycle. The guest control channel uses a private Unix socket.
+mod storage;
+
 use std::{
     fs::{self, File, OpenOptions},
     io::{self, BufRead, BufReader, Read, Write},
@@ -17,6 +19,7 @@ use std::{
 struct Session {
     process: Child,
     socket_dir: PathBuf,
+    data: PathBuf,
 }
 
 impl Drop for Session {
@@ -69,13 +72,16 @@ fn exec_with_input(args: &[&str], input: &str) -> Result<Output, String> {
         .ok_or("Mac 虚拟机未运行。")?
         .socket_dir
         .join("control");
+    exec_at(&socket, args, input, Duration::from_secs(50))
+}
+
+fn exec_at(socket: &Path, args: &[&str], input: &str, timeout: Duration) -> Result<Output, String> {
     let mut stream = UnixStream::connect(socket).map_err(|e| e.to_string())?;
-    let timeout = Some(Duration::from_secs(50));
     stream
-        .set_read_timeout(timeout)
+        .set_read_timeout(Some(timeout))
         .map_err(|e| e.to_string())?;
     stream
-        .set_write_timeout(timeout)
+        .set_write_timeout(Some(timeout))
         .map_err(|e| e.to_string())?;
     serde_json::to_writer(&mut stream, &(args, input)).map_err(|e| e.to_string())?;
     stream.write_all(b"\n").map_err(|e| e.to_string())?;
@@ -91,6 +97,37 @@ fn exec_with_input(args: &[&str], input: &str) -> Result<Output, String> {
         stdout: stdout.into_bytes(),
         stderr: stderr.into_bytes(),
     })
+}
+
+pub fn storage_status(data: &Path) -> Result<crate::storage::StorageStatus, String> {
+    let mut lock = SESSION.lock().unwrap();
+    let available = lock.as_mut()
+        .filter(|session| session.data == data && session.process.stdin.is_some())
+        .and_then(|session| {
+            matches!(session.process.try_wait(), Ok(None))
+                .then(|| storage::sample(&session.socket_dir.join("control"), &session.data).ok())
+                .flatten()
+        });
+    storage::status(data, available).map_err(|e| format!("无法读取虚拟机存储：{e}"))
+}
+
+fn monitor_storage() {
+    let Some(socket_dir) = SESSION.lock().unwrap().as_ref().map(|s| s.socket_dir.clone()) else {
+        return;
+    };
+    thread::spawn(move || loop {
+        {
+            let mut lock = SESSION.lock().unwrap();
+            let Some(session) = lock.as_mut().filter(|s| s.socket_dir == socket_dir) else {
+                break;
+            };
+            if !matches!(session.process.try_wait(), Ok(None)) || session.process.stdin.is_none() {
+                break;
+            }
+            let _ = storage::sample(&socket_dir.join("control"), &session.data);
+        }
+        thread::sleep(Duration::from_secs(30));
+    });
 }
 
 pub fn prepare(
@@ -115,14 +152,15 @@ pub fn prepare(
                 .map_err(|e| e.to_string())?;
             let timestamp = format!("@{}", now.as_secs());
             let result = exec(&["/bin/date", "-u", "-s", &timestamp])?;
-            return if result.status.success() {
-                Ok(())
-            } else {
-                Err(format!(
+            if !result.status.success() {
+                return Err(format!(
                     "无法同步 Linux 虚拟机时钟：{}",
                     super::output_text(&result)
-                ))
-            };
+                ));
+            }
+            storage::resize_guest(data)?;
+            monitor_storage();
+            return Ok(());
         }
         thread::sleep(Duration::from_millis(250));
     }
@@ -172,10 +210,11 @@ fn prepare_vm(
         .open(&persistent)
     {
         // The file is sparse. Only blocks written by the guest occupy host storage.
-        Ok(file) => file.set_len(2 * 1024 * 1024 * 1024)?,
+        Ok(file) => file.set_len(storage::INITIAL_BYTES)?,
         Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {}
         Err(e) => return Err(e),
     }
+    let growth_target = storage::growth_target(&data_path, fs::metadata(&persistent)?.len());
     let serial = File::create(data_path.join("boot.log"))?;
     let nonce = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -201,7 +240,12 @@ fn prepare_vm(
         return Err(error);
     }
     progress("mac-boot");
-    let child = Command::new(native.join("haven-vm"))
+    let mut command = Command::new(native.join("haven-vm"));
+    command.env_remove("HAVEN_STATE_GROW_TO");
+    if let Some(target) = growth_target {
+        command.env("HAVEN_STATE_GROW_TO", target.to_string());
+    }
+    let child = command
         .arg(kernel)
         .arg(native.join("initrd"))
         .arg(native.join("system.squashfs"))
@@ -218,6 +262,7 @@ fn prepare_vm(
             *session = Some(Session {
                 process,
                 socket_dir,
+                data: data_path,
             })
         }
         Err(error) => {
@@ -233,6 +278,9 @@ pub fn stop() -> Result<(), String> {
     let Some(session) = lock.as_mut() else {
         return Ok(());
     };
+    if session.process.stdin.is_some() && matches!(session.process.try_wait(), Ok(None)) {
+        let _ = storage::sample(&session.socket_dir.join("control"), &session.data);
+    }
     drop(session.process.stdin.take());
     let deadline = Instant::now() + Duration::from_secs(22);
     while Instant::now() < deadline {

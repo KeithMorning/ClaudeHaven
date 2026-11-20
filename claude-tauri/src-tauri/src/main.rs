@@ -2,6 +2,7 @@
 
 mod bootstrap;
 mod runtime;
+mod storage;
 
 use serde::{Deserialize, Serialize};
 use std::path::Path;
@@ -733,6 +734,13 @@ struct RuntimeStatus {
     host_probe: Option<bootstrap::probe::HostProbe>,
 }
 
+#[tauri::command]
+async fn storage_status(app: tauri::AppHandle) -> Result<Option<storage::StorageStatus>, String> {
+    tauri::async_runtime::spawn_blocking(move || storage::status(&app))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
 #[cfg(windows)]
 fn wsl_ready_marker(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
     app.path().app_data_dir().ok().map(|p| p.join("bootstrap").join("runtime-verified-v1"))
@@ -902,6 +910,7 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             runtime_status,
+            storage_status,
             bootstrap_status,
             bootstrap_snapshot,
             bootstrap_start,

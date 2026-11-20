@@ -40,6 +40,10 @@ main{min-height:0;overflow:hidden}
 .settings-card label{font-size:12px;margin-top:20px}
 .settings-card input,.settings-card select{font-size:13px}
 .settings-footer span,.safety-note p{font-size:12px}
+.storage-card{margin-top:16px}
+.storage-stats{display:flex;flex-wrap:wrap;gap:16px 32px;margin:0}
+.storage-stats dt{font-size:12px;color:var(--muted)}
+.storage-stats dd{margin:6px 0 0;font-size:16px;font-weight:600}
 .safety-note{width:100%;max-width:none}
 .safety-note strong{font-size:13px}
 .select-wrap{position:relative;width:100%}

@@ -50,6 +50,24 @@ func localDesktop() throws -> Int32 {
     return try listenSocket(&addr, family: AF_INET)
 }
 
+func growStateDiskIfRequested(_ path: String) throws {
+    guard let requested = ProcessInfo.processInfo.environment["HAVEN_STATE_GROW_TO"] else { return }
+    guard let target = Int64(requested), target > 0 else {
+        throw LaunchError("无效的虚拟数据盘扩容目标")
+    }
+    let fd = open(path, O_WRONLY | O_NOFOLLOW)
+    guard fd >= 0 else { throw LaunchError("无法打开虚拟数据盘：\(String(cString: strerror(errno)))") }
+    defer { close(fd) }
+    var info = stat()
+    guard fstat(fd, &info) == 0, (info.st_mode & S_IFMT) == S_IFREG else {
+        throw LaunchError("无法确认虚拟数据盘格式")
+    }
+    guard info.st_size < target else { return }
+    guard ftruncate(fd, target) == 0, fsync(fd) == 0 else {
+        throw LaunchError("无法扩展虚拟数据盘：\(String(cString: strerror(errno)))")
+    }
+}
+
 func copyBytes(_ source: Int32, _ destination: Int32) {
     var buffer = [UInt8](repeating: 0, count: 65536)
     while true {
@@ -133,6 +151,10 @@ func run() throws {
     loader.initialRamdiskURL = URL(fileURLWithPath: args[2])
     loader.commandLine = "console=hvc0 net.ifnames=0"
     config.bootLoader = loader
+    let control = try localControl(args[7])
+    let desktop = try localDesktop()
+    // Claim the app's desktop endpoint before changing an unattached disk image.
+    try growStateDiskIfRequested(args[4])
     config.storageDevices = try zip([args[3], args[4]], [true, false]).map { path, readOnly in
         let attachment = try VZDiskImageStorageDeviceAttachment(url: URL(fileURLWithPath: path), readOnly: readOnly)
         return VZVirtioBlockDeviceConfiguration(attachment: attachment)
@@ -150,8 +172,6 @@ func run() throws {
     console.attachment = VZFileHandleSerialPortAttachment(fileHandleForReading: nil, fileHandleForWriting: .standardOutput)
     config.serialPorts = [console]
     try config.validate()
-    let control = try localControl(args[7])
-    let desktop = try localDesktop()
     let vm = VZVirtualMachine(configuration: config)
     bridge(control, to: 6081, vm: vm)
     bridge(desktop, to: 6080, vm: vm)

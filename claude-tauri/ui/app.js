@@ -191,10 +191,49 @@ function showProtection(state) {
   if (state !== 'guarded') $('timezoneWarning').hidden = true;
 }
 
+function formatStorageBytes(bytes) {
+  if (!Number.isFinite(bytes)) return '—';
+  const gib = 1024 ** 3;
+  if (bytes >= gib) return `${(bytes / gib).toLocaleString(undefined, { maximumFractionDigits: 2 })} GiB`;
+  return `${(bytes / 1024 ** 2).toLocaleString(undefined, { maximumFractionDigits: 1 })} MiB`;
+}
+
+async function refreshStorage() {
+  const button = $('refreshStorage');
+  if (button.disabled) return;
+  button.disabled = true;
+  try {
+    const status = await invoke('storage_status');
+    $('storageCard').hidden = !status;
+    if (!status) return;
+    $('storageCapacity').textContent = formatStorageBytes(status.capacity_bytes);
+    $('storageAllocated').textContent = formatStorageBytes(status.allocated_bytes);
+    $('storageAvailable').textContent = formatStorageBytes(status.guest_available_bytes);
+    const growth = status.growth;
+    $('storagePolicy').hidden = !growth;
+    if (growth) {
+      $('storagePolicy').textContent = `剩余空间低于 ${formatStorageBytes(growth.threshold_bytes)} 时，下次启动按需扩容，最高 ${formatStorageBytes(growth.limit_bytes)}。`;
+    }
+    const pending = growth?.pending_capacity_bytes;
+    let message = status.guest_available_bytes == null
+      ? '启动虚拟机后可刷新剩余空间。' : '';
+    if (!status.initialized) message = '首次启动时创建虚拟盘。';
+    if (pending != null) message = `下次启动计划扩容到 ${formatStorageBytes(pending)}，本机磁盘空间不足时将延后。`;
+    $('storageMessage').textContent = message;
+  } catch (error) {
+    $('storageCard').hidden = false;
+    $('storageMessage').textContent = String(error);
+  } finally {
+    button.disabled = false;
+  }
+}
+$('refreshStorage').addEventListener('click', () => { void refreshStorage(); });
+
 function switchPage(page) {
   document.querySelectorAll('[data-page]').forEach((el) => el.classList.toggle('active', el.dataset.page === page));
   document.querySelectorAll('[data-view]').forEach((el) => { el.hidden = el.dataset.view !== page; });
   $('pageTitle').textContent = ({ home: '虚拟桌面', files: '工作区', system: '系统设置' })[page] || 'Claude Haven';
+  if (page === 'system') void refreshStorage();
 }
 document.querySelectorAll('[data-page]').forEach((el) => el.addEventListener('click', () => switchPage(el.dataset.page)));
 

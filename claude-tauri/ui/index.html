@@ -65,6 +65,16 @@
           <p class="field-help" id="timezoneDetails" role="status"></p>
           <div class="settings-footer"><span id="environmentMessage" role="status"></span><button id="saveEnvironment" class="secondary-button" type="button">保存设置</button></div>
         </section>
+        <section class="settings-card storage-card" id="storageCard" aria-labelledby="storageTitle" hidden>
+          <div class="settings-heading"><div><h2 id="storageTitle">虚拟机存储</h2><p>查看虚拟盘容量与它在本机磁盘上的实际占用。</p></div></div>
+          <dl class="storage-stats">
+            <div><dt>设定容量</dt><dd id="storageCapacity">—</dd></div>
+            <div><dt>本机实际占用</dt><dd id="storageAllocated">—</dd></div>
+            <div><dt>虚拟机剩余空间</dt><dd id="storageAvailable">—</dd></div>
+          </dl>
+          <p class="field-help" id="storagePolicy" hidden></p>
+          <div class="settings-footer"><span id="storageMessage" role="status"></span><button id="refreshStorage" class="secondary-button" type="button">刷新</button></div>
+        </section>
         <section class="settings-card reset-card" aria-labelledby="resetTitle">
           <div class="settings-heading"><div><span class="section-kicker">02 / ENVIRONMENT</span><h2 id="resetTitle">重置系统</h2><p>删除当前 Linux 虚拟环境，之后可重新启动一个干净环境。</p></div><div class="card-icon reset-icon" aria-hidden="true">↺</div></div>
           <div class="reset-warning"><strong>此操作会删除虚拟环境中的所有数据</strong><p>包括 Claude 登录状态、虚拟环境内的文件和已安装内容。宿主共享工作区及本应用保存的网络配置会保留。</p></div>

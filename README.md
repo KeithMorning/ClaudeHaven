@@ -80,9 +80,9 @@ Try the third-party [Claude environment checker](https://fuck-claude.vercel.app/
 
 They remain in the local folder you selected as your workspace, including when the virtual desktop is stopped.
 
-**Why does the Mac data disk show a 2 GB capacity?**
+**Why does the Mac data disk initially show 2 GiB?**
 
-The persistent `state.img` is a sparse file with a 2 GB logical capacity. It does not reserve 2 GB of physical storage when created; its actual disk usage grows as the virtual desktop writes data.
+The persistent `state.img` starts as a sparse disk with a logical capacity of 2 GiB. It uses host disk space as the virtual desktop writes data. See **System Settings → Virtual Machine Storage** for the logical capacity, actual Mac disk usage, and free space inside the VM. When the VM has less than 1 GiB free, the app schedules the disk to double on the next start, up to 16 GiB, if the Mac has enough free space.
 
 ## Security and privacy
 
