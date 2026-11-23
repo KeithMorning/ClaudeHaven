@@ -106,15 +106,18 @@ function sendDesktop(message) {
   $('desktopFrame').contentWindow?.postMessage({ channel: clipboardChannel, ...message }, desktopOrigin);
 }
 $('desktopFrame').addEventListener('load', () => {
-  if (sessionStarted) sendDesktop({ type: 'hello' });
+  if (!sessionStarted) return;
+  resetClipboard();
+  sendDesktop({ type: 'hello' });
 });
 window.addEventListener('message', (event) => {
   if (!sessionStarted || event.origin !== desktopOrigin || event.source !== $('desktopFrame').contentWindow || event.data?.channel !== clipboardChannel) return;
   const message = event.data;
   if (message.type === 'ready') {
-    clipboardConnected = message.connected === true;
-    clipboardPending = null;
-    if (clipboardConnected) clipboardLastHost = null;
+    const connected = message.connected === true;
+    if (connected === clipboardConnected) return;
+    resetClipboard();
+    clipboardConnected = connected;
   } else if (message.type === 'ack' && clipboardPending && message.id === clipboardPending.id) {
     if (message.sent) { clipboardLastHost = clipboardPending.normalized; clipboardLastGuest = clipboardPending.normalized; }
     clipboardPending = null;

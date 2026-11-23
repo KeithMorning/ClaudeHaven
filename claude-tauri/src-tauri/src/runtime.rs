@@ -305,7 +305,11 @@ fn guest_script(script: &str) -> Result<String, String> {
     if !result.status.success() {
         return Err(format!("虚拟环境操作失败：{}", output_text(&result)));
     }
-    Ok(output_text(&result))
+    // Successful guest commands return structured stdout. WSL host warnings
+    // on stderr must not change results such as the guard's `running` marker.
+    Ok(crate::bootstrap::decode_windows_output(&result.stdout)
+        .trim()
+        .to_owned())
 }
 
 #[cfg(any(windows, target_os = "macos"))]
@@ -494,7 +498,7 @@ pub(crate) fn verify_existing_desktop() -> Result<(), String> {
 #[cfg(any(windows, target_os = "macos"))]
 pub(crate) fn ensure_clipboard_bridge() -> Result<(), String> {
     guest_script(
-        "set -eu\ncommand -v vncconfig >/dev/null\nif ! pgrep -x vncconfig >/dev/null; then DISPLAY=:1 nohup vncconfig -nowin </dev/null >/tmp/claude-vm-vncconfig.log 2>&1 & fi\nprintf READY\n",
+        "set -eu\nexport DISPLAY=:1\ncommand -v vncconfig >/dev/null\nvncconfig -set SendPrimary=0\nvncconfig -set SetPrimary=0\nif ! pgrep -x vncconfig >/dev/null; then nohup vncconfig -nowin </dev/null >/tmp/claude-vm-vncconfig.log 2>&1 & fi\nprintf READY\n",
     )?;
     Ok(())
 }

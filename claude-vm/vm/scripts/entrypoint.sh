@@ -292,7 +292,9 @@ cp -f "$_tint2rc" ~/.config/tint2/tint2rc
 #   镜像里现成的 lxterminal.conf 与旧 xterm 深色主题是同一套色值，直接沿用。
 #   lxterminal 走 GTK3 的 im-ibus.so，中文由 Pango 渲染，双宽字符宽度算得准。
 mkdir -p ~/.config/lxterminal
-cp -f /opt/config/lxterminal.conf ~/.config/lxterminal/lxterminal.conf
+TERMINAL_CONFIG=/opt/assets/config/lxterminal.conf
+[ -f "$TERMINAL_CONFIG" ] || TERMINAL_CONFIG=/opt/config/lxterminal.conf
+cp -f "$TERMINAL_CONFIG" ~/.config/lxterminal/lxterminal.conf
 
 # 3.1.1) 串流页面：用自带的极简版，去掉 noVNC 那个悬浮控制条
 #        优先用 /opt/assets（随客户端版本更新），没有才回退镜像内自带的旧副本
@@ -423,9 +425,13 @@ for _ in $(seq 1 10); do
   sleep 0.1
 done
 rm -f /tmp/.X1-lock 2>/dev/null || true
+# The streamed desktop and its clipboard live on X11, even when WSLg is present.
+unset WAYLAND_DISPLAY WAYLAND_SOCKET
+export GDK_BACKEND=x11
 export DISPLAY=:1
 Xtigervnc :1 -geometry "$VENV_GEOMETRY" -depth 24 -rfbport 5901 -localhost \
-  -SecurityTypes None -nolisten unix > ~/.vnc/Xtigervnc.log 2>&1 &
+  -SecurityTypes None -nolisten unix -SendPrimary=0 -SetPrimary=0 \
+  > ~/.vnc/Xtigervnc.log 2>&1 &
 _vnc_pid=$!
 if command -v xdpyinfo >/dev/null 2>&1; then
   _display_ready=0
@@ -568,6 +574,8 @@ fi
   # 画像派生的浏览器语言：chrome-login.sh / chrome-lang.py / 自检都读它
   echo "export CHROME_LANG='${CHROME_LANG:-}'"
   echo "export DISPLAY='${DISPLAY}'"
+  echo 'unset WAYLAND_DISPLAY WAYLAND_SOCKET'
+  echo 'export GDK_BACKEND=x11'
   echo "export BROWSER='/opt/scripts/chrome-login.sh'"
   echo "export XDG_RUNTIME_DIR='${XDG_RUNTIME_DIR:-}'"
   echo "export DBUS_SESSION_BUS_ADDRESS='${DBUS_SESSION_BUS_ADDRESS:-}'"

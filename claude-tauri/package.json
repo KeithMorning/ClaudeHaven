@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "sync-runtime": "node scripts/sync-runtime.js",
-    "dev": "npm run sync-runtime && node scripts/prepare-macos.js && tauri dev",
+    "dev": "npm run sync-runtime -- --dev && node scripts/prepare-macos.js && tauri dev --port 1430",
     "build": "npm run sync-runtime && node scripts/prepare-macos.js && tauri build",
     "package:macos": "bash scripts/package-macos-dmg.sh",
     "test": "cargo test --manifest-path src-tauri/Cargo.toml"

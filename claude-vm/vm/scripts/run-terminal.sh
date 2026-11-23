@@ -9,5 +9,10 @@
 #   字体与深色配色读 ~/.config/lxterminal/lxterminal.conf，由 entrypoint 部署。
 [ -f /opt/config/runtime-env ] && . /opt/config/runtime-env
 
-exec lxterminal --no-remote --title="Terminal" --geometry=120x34 \
-  -e /opt/scripts/session-shell.sh
+if command -v lxterminal >/dev/null 2>&1; then
+  exec lxterminal --no-remote --title="Terminal" --geometry=120x34 \
+    -e /opt/scripts/session-shell.sh
+fi
+
+# The base image includes xterm even when input method setup was interrupted.
+exec xterm -T "Terminal" -geometry 120x34 -e /opt/scripts/session-shell.sh

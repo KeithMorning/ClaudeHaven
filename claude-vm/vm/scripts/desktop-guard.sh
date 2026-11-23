@@ -48,13 +48,18 @@ while true; do
     rm -f /tmp/.X1-lock 2>/dev/null || true
     mkdir -p /root/.vnc
     Xtigervnc :1 -geometry "$GEOM" -depth 24 -rfbport 5901 -localhost \
-      -SecurityTypes None -nolisten unix >>/root/.vnc/Xtigervnc.log 2>&1 &
+      -SecurityTypes None -nolisten unix -SendPrimary=0 -SetPrimary=0 \
+      >>/root/.vnc/Xtigervnc.log 2>&1 &
     sleep 2
   fi
 
   if alive_x && ! pgrep -x openbox >/dev/null 2>&1; then
     log "openbox 退出 → 重启"
     openbox >/dev/null 2>&1 &
+  fi
+
+  if alive_x && command -v vncconfig >/dev/null 2>&1 && ! pgrep -x vncconfig >/dev/null 2>&1; then
+    vncconfig -nowin >>/tmp/claude-vm-vncconfig.log 2>&1 &
   fi
 
   if ! pgrep -f '[w]ebsockify --web' >/dev/null 2>&1; then

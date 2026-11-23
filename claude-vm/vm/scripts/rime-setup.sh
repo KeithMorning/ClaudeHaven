@@ -50,6 +50,13 @@ fc-list ':charset=20000' family 2>/dev/null | grep -qi . || need=1
 if [ "$need" = "1" ]; then
   echo "[rime] 首次启用：安装 fcitx5 / Rime / 扩展区字形 / GTK 前端 / lxterminal…"
   export DEBIAN_FRONTEND=noninteractive
+  # Reuse packages unpacked before an interrupted guest startup.
+  if [ -n "$(dpkg --audit 2>/dev/null)" ]; then
+    if ! dpkg --configure -a >/tmp/rime-setup.log 2>&1; then
+      echo "[rime] 无法继续上次中断的包配置，详见 /tmp/rime-setup.log"
+      exit 1
+    fi
+  fi
   apt-get update -qq >/dev/null 2>&1
   # 字体策略（1.0.35）：中文主体仍靠镜像自带的 Noto Sans SC/TC（不在 checkcc
   # 指纹名单）。但它们是子集，缺 CJK 扩展 B 区（U+20000+）字形，而万象词库

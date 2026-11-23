@@ -11,5 +11,10 @@
 #   点按钮时是新开一个 wsl.exe 会话，必须从落盘的环境读回代理/输入法变量。
 [ -f /opt/config/runtime-env ] && . /opt/config/runtime-env
 
-exec lxterminal --no-remote --title="Claude Code" --geometry=112x32 \
-  -e /opt/scripts/session-claude.sh
+if command -v lxterminal >/dev/null 2>&1; then
+  exec lxterminal --no-remote --title="Claude Code" --geometry=112x32 \
+    -e /opt/scripts/session-claude.sh
+fi
+
+# The base image includes xterm even when input method setup was interrupted.
+exec xterm -T "Claude Code" -geometry 112x32 -e /opt/scripts/session-claude.sh

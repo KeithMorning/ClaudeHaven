@@ -70,7 +70,12 @@ window.__rfbState = () => (connected ? 'connected' : 'disconnected');
 
 // The Tauri shell is cross-origin. Accept messages only from its local app
 // origin and only reply to the parent that completed the handshake.
-const bridgeOrigins = new Set(['http://tauri.localhost', 'https://tauri.localhost', 'tauri://localhost']);
+const bridgeOrigins = new Set([
+  'http://tauri.localhost',
+  'https://tauri.localhost',
+  'tauri://localhost',
+]);
+// HAVEN_DEV_CLIPBOARD_ORIGIN
 function bridgePost(message) {
   if (bridgeOrigin && window.parent !== window) window.parent.postMessage(message, bridgeOrigin);
 }

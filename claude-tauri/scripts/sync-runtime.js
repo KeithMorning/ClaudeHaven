@@ -33,6 +33,7 @@ const ASSETS = [
   // 走 assets 同步（entrypoint 优先读它），不必重建 rootfs。
   ['config/openbox-rc.xml', 'config/openbox-rc.xml'],
   ['config/tint2rc', 'config/tint2rc'],
+  ['config/lxterminal.conf', 'config/lxterminal.conf'],
   ['assets/icons/chrome.png', 'icons/chrome.png'],
   ['assets/icons/claude-mascot.png', 'icons/claude-mascot.png'],
   ['config/fcitx5/claude/theme.conf', 'config/fcitx5/claude/theme.conf'],
@@ -84,7 +85,12 @@ function main() {
       continue;
     }
     fs.mkdirSync(path.dirname(d), { recursive: true });
-    fs.copyFileSync(s, d);
+    if (to === 'novnc/desktop.html' && process.argv.includes('--dev')) {
+      const page = fs.readFileSync(s, 'utf8');
+      fs.writeFileSync(d, page.replace('// HAVEN_DEV_CLIPBOARD_ORIGIN', "bridgeOrigins.add('http://127.0.0.1:1430');"));
+    } else {
+      fs.copyFileSync(s, d);
+    }
     a++;
   }
   console.log(`[sync-scripts] 已同步 ${a} 个界面资源 → ${ASSET_DST}`);
