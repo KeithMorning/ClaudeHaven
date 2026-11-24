@@ -52,6 +52,7 @@ macOS 现已支持 Apple Silicon（M 系列芯片）和 macOS 13 及更新版本
 - 在同一张 Linux 桌面中使用 Claude Code、Chrome、终端和文件管理器。
 - 中文输入使用 fcitx5 / Rime；支持与宿主机之间的文本复制粘贴。
 - 项目文件通过共享工作区读写。图片和其他文件也可放入共享目录，在两边访问。
+- 在 Windows 上，可按需通过 WSL 互操作调用宿主机的原生命令，复用已经安装的工具，避免在 Linux 里重复安装。Windows 命令以宿主机进程运行，使用 Windows 路径和权限，也不受 Linux 客体内网络守卫保护；Claude Haven 自带的 Linux 工具仍是开箱即用的默认选择。
 - 网络保护状态会显示在工作台中；遇到节点或出口检查错误时，先在「系统设置」中更换节点并保存，再回到工作台重试。
 
 ![Claude Haven 虚拟桌面运行界面](assets/screenshots/claude-haven-running.png)

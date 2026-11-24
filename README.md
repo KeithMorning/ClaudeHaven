@@ -52,6 +52,7 @@ Return to **Desktop** and click **Start virtual environment**. On Windows, the a
 - Use Claude Code, Chrome, a terminal, and a file manager in one Linux desktop.
 - Chinese input is provided by fcitx5 / Rime. Text can be copied between the host and the desktop.
 - Access project files through the shared workspace. You can also use it to move images and other files between the host and desktop.
+- On Windows, WSL interoperability lets you invoke Windows-native commands from Linux when needed. This can reuse tools already installed on the host instead of installing a duplicate in Linux. Windows commands run as host processes, use Windows paths and permissions, and are outside the Linux network guard; Linux tools included with Claude Haven remain the ready-to-use default.
 - The app shows the network protection status. If a node or egress check fails, choose and save another node in **System Settings**, then retry from **Desktop**.
 
 ![Claude Haven Linux desktop](assets/screenshots/claude-haven-running.png)
