@@ -256,6 +256,14 @@ if [ -f /opt/assets/fonts/NotoSansTC.ttf ] && ! fc-list | grep -q 'Noto Sans TC'
   echo "[claude-vm] 已安装 Noto Sans TC（繁体笔形，非指纹名单字体）"
 fi
 
+# On macOS the writable overlay can retain fontconfig caches from an older
+# system image. Refresh them if the terminal font is present but not indexed.
+if [ -d /var/lib/haven-data ] &&
+   [ -f /usr/share/fonts/truetype/jetbrains-mono/JetBrainsMono-Medium.ttf ] &&
+   [ "$(fc-match -f '%{file}' 'JetBrains Mono:style=Medium')" != /usr/share/fonts/truetype/jetbrains-mono/JetBrainsMono-Medium.ttf ]; then
+  fc-cache -f >/dev/null 2>&1 || echo "[claude-vm] 无法刷新终端字体缓存"
+fi
+
 # 3) 桌面外观：壁纸 / 图标 / 面板 / 窗口管理器 / 终端配色
 #    这里的原则是「别让它看起来像一台裸服务器」：
 #    有壁纸、有 dock、有像样的终端字体，窗口标题不出现 root@host。
