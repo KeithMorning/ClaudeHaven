@@ -28,7 +28,7 @@ macOS is supported on Apple Silicon (M-series) with macOS 13 or later. It uses A
 
 ### 1. Download and install
 
-Go to [GitHub Releases](https://github.com/KeithMorning/ClaudeVM/releases/latest) and download the installer for your platform: the Windows x64 installer or the DMG for Apple Silicon Mac. On Mac, open the DMG and drag Claude Haven to the `Applications` shortcut.
+Download the Windows x64 installer from the [v0.1.2 release](https://github.com/KeithMorning/ClaudeVM/releases/tag/v0.1.2). This release updates Windows only. Apple Silicon Mac users can get the existing DMG from [v0.1.1](https://github.com/KeithMorning/ClaudeVM/releases/tag/v0.1.1). On Mac, open the DMG and drag Claude Haven to the `Applications` shortcut.
 
 ### 2. Configure your network
 

@@ -28,7 +28,7 @@ macOS 现已支持 Apple Silicon（M 系列芯片）和 macOS 13 及更新版本
 
 ### 1. 下载并安装
 
-前往 [GitHub Releases](https://github.com/KeithMorning/ClaudeVM/releases/latest)，下载与你的平台对应的安装包：Windows x64 安装包，或 Apple Silicon Mac 的 DMG。Mac 用户打开 DMG 后，将 Claude Haven 拖到 `Applications` 快捷方式中。
+Windows x64 安装包请从 [v0.1.2 Release](https://github.com/KeithMorning/ClaudeVM/releases/tag/v0.1.2) 下载。本次只更新 Windows；Apple Silicon Mac 用户请继续使用 [v0.1.1](https://github.com/KeithMorning/ClaudeVM/releases/tag/v0.1.1) 中的现有 DMG。Mac 用户打开 DMG 后，将 Claude Haven 拖到 `Applications` 快捷方式中。
 
 ### 2. 配置网络
 
