@@ -71,6 +71,10 @@ Follow the in-app steps to configure WSL2. If Windows asks you to restart, resta
 
 The app initializes the virtual desktop and network protection on first launch. Wait for the progress indicator to finish. If startup fails, check the displayed error and your settings, then try again.
 
+**APT says "Unable to locate package"**
+
+The Linux image omits APT package lists to keep the download small. In its terminal, run `apt-get update` before the first `apt-get install vim`. Package lists and installed software are saved on the virtual machine's data disk.
+
 **The network guard check failed**
 
 Make sure the selected YAML has a working node that can reach the internet. Select and save a node again under **Network**. The environment will not be marked ready until the guard check passes.

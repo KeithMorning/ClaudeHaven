@@ -577,20 +577,20 @@ function connectDesktop() {
 }
 
 const macStartupStages = {
-  'mac-image': [0, '正在准备内置 Linux 镜像'],
-  'mac-boot': [1, '正在启动 Linux 虚拟机并挂载工作区'],
-  'mac-sync': [2, '正在同步桌面资源与启动脚本'],
-  'mac-network': [2, '正在初始化虚拟机网络'],
-  'mac-fonts': [2, '正在准备字体和桌面资源'],
-  'mac-desktop': [2, '正在打开虚拟桌面'],
-  'mac-input': [2, '正在准备中文输入法'],
-  'desktop-ready': [3, '桌面已启动，正在确认网络保护'],
+  'mac-image': '正在准备数据盘并解压内核',
+  'mac-boot': '正在启动 Linux 虚拟机并挂载工作区',
+  'mac-sync': '正在校验运行时脚本和桌面资源',
+  'mac-network': '正在连接所选网络节点',
+  'mac-fonts': '正在检查字体并配置桌面',
+  'mac-desktop': '正在启动图形桌面',
+  'mac-input': '正在启动中文输入法服务',
+  'desktop-ready': '桌面已就绪，正在验证网络保护',
 };
 
 function showMacStartupStage(event) {
   if (event === 'mac-first-start') {
     $('startupTitle').textContent = '首次启动';
-    $('startupNote').textContent = '首次会初始化本地数据和桌面，请保持应用打开。';
+    $('startupNote').textContent = '首次启动会创建本地数据盘，请保持应用打开。';
     $('startupNote').hidden = false;
     return;
   }
@@ -601,15 +601,7 @@ function showMacStartupStage(event) {
   }
   const stage = macStartupStages[event];
   if (!stage) return;
-  const [index, detail] = stage;
-  $('startupDetail').textContent = detail;
-  $('startupTrack').hidden = true;
-  $('startupSteps').hidden = false;
-  Array.from($('startupSteps').children).forEach((step, position) => {
-    step.toggleAttribute('data-complete', position < index);
-    if (position === index) step.setAttribute('aria-current', 'step');
-    else step.removeAttribute('aria-current');
-  });
+  $('startupDetail').textContent = stage;
 }
 
 async function startSession() {
@@ -619,13 +611,13 @@ async function startSession() {
   showProtection('checking');
   $('startRuntime').disabled = true;
   $('stageTitle').textContent = '正在启动虚拟环境';
-  $('stageDescription').textContent = '正在同步运行时并验证网络守卫，首次启动可能需要几分钟。';
+  $('stageDescription').textContent = latestRuntimePlatform === 'macos'
+    ? '正在启动虚拟桌面并验证网络保护。'
+    : '正在同步运行时并验证网络守卫，首次启动可能需要几分钟。';
   $('installNote').textContent = '请保持应用打开。';
   $('startupOverlay').hidden = false;
   $('startupTitle').textContent = '正在准备工作空间';
   $('startupDetail').textContent = '正在启动虚拟桌面';
-  $('startupSteps').hidden = true;
-  $('startupTrack').hidden = false;
   $('startupNote').hidden = true;
   let unlisten = () => {};
   try {
@@ -718,8 +710,6 @@ async function refreshStatus(manual = false) {
       $('stageTitle').textContent = '正在恢复已有会话';
       $('startupTitle').textContent = '正在恢复工作空间';
       $('startupDetail').textContent = '正在确认已有会话的网络保护';
-      $('startupSteps').hidden = true;
-      $('startupTrack').hidden = false;
       $('startupNote').hidden = true;
       $('startupOverlay').hidden = false;
       try {

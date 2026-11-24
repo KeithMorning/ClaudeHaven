@@ -23,6 +23,11 @@ fi
 # 换成 root 自己的运行时目录，GTK 应用立刻正常。2.0 只走串流桌面，但这条仍必须保留。
 export XDG_RUNTIME_DIR=/tmp/claude-vm-runtime
 mkdir -p "$XDG_RUNTIME_DIR" && chmod 700 "$XDG_RUNTIME_DIR"
+mac_chrome_lang_pid=
+if [ "${HAVEN_PREINSTALLED_INPUT:-0}" = 1 ] && [ -f /opt/scripts/chrome-lang.py ]; then
+  python3 /opt/scripts/chrome-lang.py --set >/dev/null 2>&1 &
+  mac_chrome_lang_pid=$!
+fi
 # WSL 可能在启动早期同步宿主时区。设置需要在桌面进程继承 TZ 前完成。
 apply_tz() {
   [ -n "${TZ:-}" ] || return 0
@@ -172,7 +177,9 @@ if pgrep -x chrome >/dev/null 2>&1; then
   pkill -x chrome >/dev/null 2>&1 || true
   sleep 1
 fi
-if [ -f /opt/scripts/chrome-lang.py ]; then
+if [ -n "$mac_chrome_lang_pid" ]; then
+  wait "$mac_chrome_lang_pid" || true
+elif [ -f /opt/scripts/chrome-lang.py ]; then
   python3 /opt/scripts/chrome-lang.py --set >/dev/null 2>&1 || true
 fi
 
@@ -355,14 +362,31 @@ _theme_dir=/opt/assets/config/themes/Claude/openbox-3
 cp -f "$_theme_dir"/*.xbm /usr/share/themes/Claude/openbox-3/ 2>/dev/null || true
 
 # 3.2) 图标与壁纸
-node /opt/scripts/gen-art.js icons /opt/icons 64 >/dev/null 2>&1 || true
-[ ! -f /opt/assets/icons/chrome.png ] || cp -f /opt/assets/icons/chrome.png /opt/icons/chrome.png
-[ ! -f /opt/assets/icons/claude-mascot.png ] || cp -f /opt/assets/icons/claude-mascot.png /opt/icons/claude.png
-if ! python3 /opt/scripts/normalize-launcher-icons.py /opt/icons; then
-  mkdir -p /opt/icons/launcher
+# Mac 的持久层复用已生成的启动器图标；资源更新时再生成。
+mac_icons_current() {
+  local marker=/opt/icons/.launcher-ready source icon
+  [ -f "$marker" ] || return 1
   for icon in chrome claude terminal folder; do
-    cp -f "/opt/icons/$icon.png" "/opt/icons/launcher/$icon.png" || true
+    [ -s "/opt/icons/launcher/$icon.png" ] || return 1
   done
+  for source in /opt/scripts/gen-art.js /opt/scripts/normalize-launcher-icons.py \
+                /opt/assets/icons/chrome.png /opt/assets/icons/claude-mascot.png; do
+    [ ! -f "$source" ] || [ ! "$source" -nt "$marker" ] || return 1
+  done
+}
+if [ "${HAVEN_PREINSTALLED_INPUT:-0}" != 1 ] || ! mac_icons_current; then
+  node /opt/scripts/gen-art.js icons /opt/icons 64 >/dev/null 2>&1 || true
+  [ ! -f /opt/assets/icons/chrome.png ] || cp -f /opt/assets/icons/chrome.png /opt/icons/chrome.png
+  [ ! -f /opt/assets/icons/claude-mascot.png ] || cp -f /opt/assets/icons/claude-mascot.png /opt/icons/claude.png
+  if python3 /opt/scripts/normalize-launcher-icons.py /opt/icons; then
+    [ "${HAVEN_PREINSTALLED_INPUT:-0}" != 1 ] || touch /opt/icons/.launcher-ready
+  else
+    rm -f /opt/icons/.launcher-ready
+    mkdir -p /opt/icons/launcher
+    for icon in chrome claude terminal folder; do
+      cp -f "/opt/icons/$icon.png" "/opt/icons/launcher/$icon.png" || true
+    done
+  fi
 fi
 _wallpaper=/opt/assets/wallpaper/claude-haven.png
 [ -f "$_wallpaper" ] || _wallpaper=/opt/wall/source.png
@@ -415,7 +439,7 @@ fi
 #      正常布局里 bin/claude.exe 是 ~245MB 的原生二进制（对，后缀就是 .exe）；
 #      但它的自更新只要中断一次，就会把整包换成「500 字节报错桩 + 残片」，
 #      表现为终端里敲 claude 报 command not found 或 Bus error，且没有任何提示。
-#      这里两种布局都认，每次启动都验一遍。
+#      两种布局都认。Mac 的固定镜像先快速检查文件大小；其他环境仍执行版本体检。
 _cb_dir="$(ls -d /usr/local/lib/nodejs/*/lib/node_modules/@anthropic-ai/claude-code 2>/dev/null | head -1)"
 if [ -n "$_cb_dir" ]; then
   for _cand in "$_cb_dir/bin/claude.exe" \
@@ -423,6 +447,12 @@ if [ -n "$_cb_dir" ]; then
     [ -f "$_cand" ] || continue
     [ -x "$_cand" ] || chmod +x "$_cand" 2>/dev/null || true
     ln -sf "$_cand" /usr/local/bin/claude
+    if [ "${HAVEN_PREINSTALLED_INPUT:-0}" = 1 ] &&
+       [ "$(stat -c %s "$_cand" 2>/dev/null || echo 0)" -ge 1000000 ]; then
+      # The Mac image ships a fixed ARM64 binary with updates disabled.
+      # A size check still catches the tiny failed-update stub.
+      break
+    fi
     if timeout 20 claude --version >/tmp/claude-ver 2>&1 && grep -qE '^[0-9]+\.[0-9]+' /tmp/claude-ver; then
       echo "[claude-vm] Claude Code $(head -1 /tmp/claude-ver)"
       break
@@ -472,6 +502,29 @@ else
   sleep 2
 fi
 
+# The Mac guest can register its input method while desktop assets load.
+# The later readiness check still waits for fcitx5 and selects Rime before ready.
+INPUT_METHOD="${INPUT_METHOD:-off}"
+if [ "${HAVEN_PREINSTALLED_INPUT:-0}" = 1 ] && [ "$INPUT_METHOD" = rime ] && command -v fcitx5 >/dev/null 2>&1; then
+  if [ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ]; then
+    if command -v dbus-launch >/dev/null 2>&1; then
+      eval "$(dbus-launch --sh-syntax)" 2>/dev/null || true
+    fi
+    if [ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ] && command -v dbus-daemon >/dev/null 2>&1; then
+      _bus_sock=/tmp/claude-vm-dbus.sock
+      rm -f "$_bus_sock"
+      DBUS_SESSION_BUS_ADDRESS="unix:path=$_bus_sock"
+      dbus-daemon --session --address="$DBUS_SESSION_BUS_ADDRESS" --fork \
+        >/tmp/dbus-session.log 2>&1 || true
+    fi
+    export DBUS_SESSION_BUS_ADDRESS
+  fi
+  export XMODIFIERS="@im=fcitx" GTK_IM_MODULE=fcitx QT_IM_MODULE=fcitx
+  if fcitx5 -d --replace >/tmp/fcitx5.log 2>&1; then
+    mac_fcitx_prestarted=1
+  fi
+fi
+
 # TigerVNC uses vncconfig to exchange the X clipboard with connected clients.
 if command -v vncconfig >/dev/null 2>&1; then
   vncconfig -nowin >/tmp/claude-vm-vncconfig.log 2>&1 &
@@ -489,7 +542,7 @@ if [ -f /opt/wall/wall.png ]; then
   feh --bg-fill /opt/wall/wall.png >/dev/null 2>&1 || true
 fi
 openbox >/dev/null 2>&1 &
-sleep 1
+[ "${HAVEN_PREINSTALLED_INPUT:-0}" = 1 ] || sleep 1
 tint2 >/dev/null 2>&1 &
 
 # 5.1) 首次启动：弹出欢迎引导（HTML 应用窗口，不是黑底终端）
@@ -548,7 +601,9 @@ if [ "$INPUT_METHOD" = "rime" ]; then
     /opt/scripts/rime-setup.sh || echo "[claude-vm] 输入法安装失败，本次不启用"
   fi
   if command -v fcitx5 >/dev/null 2>&1; then
-    pkill -x fcitx5 2>/dev/null || true
+    if [ "${mac_fcitx_prestarted:-0}" != 1 ]; then
+      pkill -x fcitx5 2>/dev/null || true
+    fi
     # D-Bus 会话总线：fcitx5 的前端/面板/探活全走它，没有它 fcitx5 直接起不来
     if [ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ]; then
       if command -v dbus-launch >/dev/null 2>&1; then
@@ -567,7 +622,9 @@ if [ "$INPUT_METHOD" = "rime" ]; then
     export GTK_IM_MODULE="fcitx"
     export QT_IM_MODULE="fcitx"
     # 开头是 set -e，daemon 启动失败不能带走整个 entrypoint（否则整台桌面消失）
-    fcitx5 -d --replace >/tmp/fcitx5.log 2>&1 || true
+    if [ "${mac_fcitx_prestarted:-0}" != 1 ]; then
+      fcitx5 -d --replace >/tmp/fcitx5.log 2>&1 || true
+    fi
     _im_ok=0
     for _ in $(seq 1 12); do
       if fcitx5-remote >/dev/null 2>&1; then _im_ok=1; break; fi

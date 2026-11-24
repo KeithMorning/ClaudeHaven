@@ -71,6 +71,10 @@ Windows x64 安装包请从 [v0.1.2 Release](https://github.com/KeithMorning/Cla
 
 首次启动需要初始化虚拟桌面和网络保护。等待进度完成；如果启动失败，应用会显示错误信息，可检查配置后重试。
 
+**APT 提示 `Unable to locate package`**
+
+为缩小下载体积，Linux 镜像没有预存 APT 包索引。首次安装软件前，在虚拟桌面的终端运行 `apt-get update`，再运行例如 `apt-get install vim`。索引和安装的软件会保存在虚拟机数据盘中。
+
 **网络守卫无法通过检查**
 
 确认所选 YAML 中有可用节点、节点可以连接外网，然后在「网络连接」中重新选择并保存节点。守卫检查通过前，环境不会被标记为就绪。
