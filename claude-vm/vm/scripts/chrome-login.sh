@@ -29,6 +29,10 @@ if [ -f /opt/scripts/chrome-lang.py ]; then
   python3 /opt/scripts/chrome-lang.py --set >/dev/null 2>&1 || true
 fi
 
+if ! pgrep -x chrome >/dev/null 2>&1; then
+  node /opt/scripts/fix-chrome-prefs.js --appearance-only >/dev/null 2>&1 || true
+fi
+
 # Chrome 的 SingletonLock 记的是「hostname-PID」。1.0.26 起环境身份随机化成
 # DESKTOP-XXXXXXX，旧锁仍指向 HomeVisionPC-324 这类已不存在的主机，socket 也早失效；
 # Chrome 会据此判定 Profile 正被另一台机器占用，拒绝启动（串流桌面里「Chrome 打不开」）。

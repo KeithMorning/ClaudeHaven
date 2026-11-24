@@ -2,12 +2,11 @@
 /**
  * 桌面美术资源生成器（无外部依赖，纯 JS 光栅化 + PNG 编码）
  *
- *   node gen-art.js wallpaper <out.png> [w] [h]
  *   node gen-art.js icons     <outdir>  [size]
  *
  * 为什么自己画：
  *   镜像里没有任何图片编解码库（不装 imagemagick / python-pil 是为了瘦身），
- *   而桌面观感全靠壁纸和图标。这里用 SDF + 超采样做抗锯齿，输出 8bit PNG。
+ *   图标用 SDF + 超采样做抗锯齿，输出 8bit PNG。
  */
 const fs = require('fs');
 const path = require('path');
@@ -132,51 +131,6 @@ const sdEllipseRing = (cx, cy, a, b, t) => (x, y) => {
   return Math.abs(d) * scale - t / 2;
 };
 
-/* -------------------------------- 壁纸 ----------------------------------- */
-
-function wallpaper(out, W, H) {
-  const c = new Canvas(W, H);
-  // 背景：自上而下的深色渐变（近黑 → 石墨蓝）
-  const top = [7, 9, 14], bot = [13, 16, 24];
-  const glows = [
-    // [cx%, cy%, 半径px, 颜色, 强度]
-    [0.88, 0.92, H * 0.62, [217, 119, 87], 0.85],  // 右下：Claude 橙余烬
-    [0.08, 0.04, H * 0.75, [96, 118, 220], 0.30],  // 左上：冷靛蓝
-  ];
-  const bay = [0, 16, 32, 48, 64, 80, 96, 112, 128, 144, 160, 176, 192, 208, 224, 240];
-  const bayer = (x, y) => (bay[(y & 3) * 4 + (x & 3)] / 256 - 0.5);
-
-  for (let y = 0; y < H; y++) {
-    const t = y / (H - 1);
-    for (let x = 0; x < W; x++) {
-      let r = top[0] + (bot[0] - top[0]) * t;
-      let g = top[1] + (bot[1] - top[1]) * t;
-      let b = top[2] + (bot[2] - top[2]) * t;
-
-      for (const [gx, gy, rad, col, amp] of glows) {
-        const d = Math.hypot(x - gx * W, y - gy * H) / rad;
-        const f = Math.exp(-d * d * 2.6) * amp;
-        r += col[0] * f; g += col[1] * f; b += col[2] * f;
-      }
-
-      // 轻微暗角，让四角沉下去
-      const vx = (x / W - 0.5) * 2, vy = (y / H - 0.5) * 2;
-      const vig = 1 - 0.28 * Math.pow(Math.min(1, Math.hypot(vx, vy) / 1.35), 2.2);
-      r *= vig; g *= vig; b *= vig;
-
-      // 抖动：8bit 渐变不加就一圈一圈的色带
-      const dth = bayer(x, y) * 1.6;
-      const o = (y * W + x) * 4;
-      c.buf[o] = Math.max(0, Math.min(255, Math.round(r + dth)));
-      c.buf[o + 1] = Math.max(0, Math.min(255, Math.round(g + dth)));
-      c.buf[o + 2] = Math.max(0, Math.min(255, Math.round(b + dth)));
-      c.buf[o + 3] = 255;
-    }
-  }
-  fs.writeFileSync(out, encodePNG(W, H, c.buf));
-  console.log(`[art] 壁纸 ${out} ${W}x${H}`);
-}
-
 /* -------------------------------- 图标 ----------------------------------- */
 
 const INK = { r: 232, g: 236, b: 244 };
@@ -209,10 +163,11 @@ function iconClaude(S) {
 /** 终端 >_ */
 function iconTerminal(S) {
   const c = new Canvas(S, S), k = S / 64;
-  const g = { r: 126, g: 231, b: 135 };
-  c.fill(sdCapsule(17 * k, 24 * k, 27 * k, 32 * k, 4.2 * k), g);
-  c.fill(sdCapsule(27 * k, 32 * k, 17 * k, 40 * k, 4.2 * k), g);
-  c.fill(sdCapsule(31 * k, 41 * k, 45 * k, 41 * k, 3.6 * k), { r: 200, g: 208, b: 222 });
+  const face = { r: 44, g: 43, b: 42 }, ink = { r: 241, g: 238, b: 235 };
+  c.fill(sdRoundRect(32 * k, 32 * k, 48 * k, 48 * k, 8 * k), face);
+  c.fill(sdCapsule(19 * k, 23 * k, 29 * k, 31 * k, 3.8 * k), ink);
+  c.fill(sdCapsule(29 * k, 31 * k, 19 * k, 39 * k, 3.8 * k), ink);
+  c.fill(sdCapsule(32 * k, 40 * k, 45 * k, 40 * k, 3.4 * k), ink);
   return c;
 }
 
@@ -246,10 +201,9 @@ function icons(out, S) {
 
 /* -------------------------------- 入口 ----------------------------------- */
 
-const [mode, out, a, b] = process.argv.slice(2);
-if (mode === 'wallpaper') wallpaper(out, +(a || 1280), +(b || 800));
-else if (mode === 'icons') icons(out, +(a || 64));
+const [mode, out, size] = process.argv.slice(2);
+if (mode === 'icons') icons(out, +(size || 64));
 else {
-  console.error('用法: gen-art.js wallpaper <out.png> [w] [h] | icons <dir> [size]');
+  console.error('用法: gen-art.js icons <dir> [size]');
   process.exit(1);
 }

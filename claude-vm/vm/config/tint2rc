@@ -9,34 +9,34 @@
 rounded = 0
 border_width = 1
 border_sides = T
-border_color = #323944 100
-background_color = #15191f 100
-background_color_hover = #15191f 100
-border_color_hover = #323944 100
-background_color_pressed = #15191f 100
-border_color_pressed = #323944 100
+border_color = #403b37 100
+background_color = #1a1918 100
+background_color_hover = #1a1918 100
+border_color_hover = #403b37 100
+background_color_pressed = #1a1918 100
+border_color_pressed = #403b37 100
 
 # 2: 普通任务
 rounded = 7
 border_width = 0
 border_sides = TBLR
-background_color = #191f2b 100
+background_color = #252321 100
 border_color = #000000 0
-background_color_hover = #222a3a 100
+background_color_hover = #312a25 100
 border_color_hover = #000000 0
-background_color_pressed = #141a26 100
+background_color_pressed = #1d1b1a 100
 border_color_pressed = #000000 0
 
 # 3: 当前任务
 rounded = 7
-border_width = 0
+border_width = 1
 border_sides = TBLR
-background_color = #2b3549 100
-border_color = #000000 0
-background_color_hover = #33405a 100
-border_color_hover = #000000 0
-background_color_pressed = #232c3d 100
-border_color_pressed = #000000 0
+background_color = #2c2622 100
+border_color = #f28b4b 100
+background_color_hover = #3a2c24 100
+border_color_hover = #ff9f61 100
+background_color_pressed = #211e1c 100
+border_color_pressed = #d87b46 100
 
 # 4: 紧急任务
 rounded = 7
@@ -53,29 +53,29 @@ border_color_pressed = #000000 0
 rounded = 6
 border_width = 1
 border_sides = TBLR
-background_color = #161c26 100
-border_color = #2c3546 100
-background_color_hover = #161c26 100
-border_color_hover = #2c3546 100
-background_color_pressed = #161c26 100
-border_color_pressed = #2c3546 100
+background_color = #211e1c 100
+border_color = #4b3a31 100
+background_color_hover = #211e1c 100
+border_color_hover = #4b3a31 100
+background_color_pressed = #211e1c 100
+border_color_pressed = #4b3a31 100
 
 # 6: 启动器按钮
 rounded = 8
 border_width = 1
 border_sides = TBLR
-background_color = #20262e 100
-border_color = #333c48 100
-background_color_hover = #303946 100
-border_color_hover = #526074 100
-background_color_pressed = #191e26 100
-border_color_pressed = #465366 100
+background_color = #24211f 100
+border_color = #403831 100
+background_color_hover = #342820 100
+border_color_hover = #b46a40 100
+background_color_pressed = #1d1a18 100
+border_color_pressed = #805033 100
 
 #-------------------------------------
 # 面板
 #-------------------------------------
 panel_items = LTSC
-panel_size = 100% 48
+panel_size = 100% 56
 panel_margin = 0 0
 panel_padding = 13 6 16
 panel_background_id = 1
@@ -111,20 +111,20 @@ task_align = left
 task_text = 1
 task_icon = 1
 task_centered = 0
-task_maximum_size = 188 34
+task_maximum_size = 188 38
 task_padding = 10 7 8
 task_font = DejaVu Sans 10
 task_tooltip = 1
 task_thumbnail = 0
-task_font_color = #c3ccdb 100
-task_active_font_color = #ffffff 100
+task_font_color = #ddd5ce 100
+task_active_font_color = #f7eee7 100
 task_background_id = 2
 task_active_background_id = 3
 task_urgent_background_id = 4
 task_iconified_background_id = 2
 mouse_left = toggle_iconify
-mouse_middle = close
-mouse_right = close
+mouse_middle = none
+mouse_right = none
 mouse_scroll_up = toggle
 mouse_scroll_down = iconify
 
@@ -134,7 +134,7 @@ mouse_scroll_down = iconify
 systray_padding = 4 4 8
 systray_background_id = 0
 systray_sort = ascending
-systray_icon_size = 20
+systray_icon_size = 26
 systray_icon_asb = 100 0 0
 systray_monitor = 1
 
@@ -144,7 +144,7 @@ systray_monitor = 1
 launcher_padding = 0 1 7
 launcher_background_id = 0
 launcher_icon_background_id = 0
-launcher_icon_size = 34
+launcher_icon_size = 32
 launcher_icon_asb = 100 0 0
 launcher_icon_theme_override = 0
 launcher_tooltip = 1
@@ -156,12 +156,12 @@ launcher_item_app = claude-files.desktop
 #-------------------------------------
 # 时钟
 #-------------------------------------
-time1_format = %H:%M
-time2_format = %m/%d · %a
-time1_font = DejaVu Sans Mono 11 bold
-time2_font = DejaVu Sans 8
-clock_font_color = #c5cfdb 100
-clock_padding = 5 0
+time1_format = %-I:%M %p
+time2_format = %m/%d/%Y
+time1_font = DejaVu Sans Mono 10
+time2_font = DejaVu Sans Mono 10
+clock_font_color = #f3e7dc 100
+clock_padding = 12 1
 clock_tooltip =
 clock_lclick_command =
 clock_rclick_command =

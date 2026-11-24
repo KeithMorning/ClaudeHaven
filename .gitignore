@@ -17,6 +17,8 @@ claude-tauri/runtime/rootfs-slim.tar.gz
 # sync-scripts 生成的副本（真源在 claude-vm/vm/）
 claude-tauri/runtime/scripts/
 claude-tauri/runtime/assets/
+claude-tauri/runtime/*-preview.png
+claude-tauri/runtime/*-crop.png
 
 *.log
 

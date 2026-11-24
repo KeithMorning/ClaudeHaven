@@ -1,0 +1,36 @@
+# Claude Haven 与 Claude Cage 实现对比
+
+调研日期为 2026-11-20。Haven 以本地 `34b01f1` 为基线，Cage 以 [`main` 的 `c53ce00`](https://github.com/Lee-xeo/Claude-Cage/commit/c53ce0004247b57b47f16c8b5d12f4b8b5d88df5) 为源码基线。发行包数据分别取自 Haven `v0.1.1` 和 Cage `v0.1.8`，与源码基线分开记录。文中的实测来自项目既有验证记录，这次调研没有启动客机、重跑网络探测或测量启动时间。
+
+## 虚拟化和存储
+
+| 项目 | Claude Haven | Claude Cage |
+| --- | --- | --- |
+| Windows 客机 | 应用随包提供 `rootfs.tar.gz`，首次启动用 `wsl.exe --import ... --version 2` 创建专用的 `claude-vm` 发行版，后续复用其 ext4 虚拟盘。项目入口 `/workspace` 是到 Windows 盘的 DrvFs 路径链接，构建镜像默认允许固定盘自动挂载及 WSL interop。 [运行时代码](../claude-tauri/src-tauri/src/runtime.rs#L680) · [镜像配置](../claude-vm/vm/Dockerfile#L31) | Windows 10 22H2 / 11 x64（含家庭版）用随包提供的 QEMU，经 Windows Hypervisor Platform 加速运行独立 Debian 13 客机。Cage 的受限网络启动路径拒绝 WSL2 / HCS 驱动。 [Windows 指南](https://github.com/Lee-xeo/Claude-Cage/blob/c53ce0004247b57b47f16c8b5d12f4b8b5d88df5/docs/windows.md#L3-L29) · [驱动约束](https://github.com/Lee-xeo/Claude-Cage/blob/c53ce0004247b57b47f16c8b5d12f4b8b5d88df5/internal/vm/networkconfined.go#L10-L36) |
+| macOS 客机 | Apple Silicon、macOS 13+，Swift 辅助程序使用 Virtualization.framework 直启随应用分发的 Linux 内核和 initramfs。只读 SquashFS 与 ext4 可写层通过 OverlayFS 合并，`state.img` 初始逻辑容量 2 GiB，实际占用随写入扩展。共享目录通过 VirtioFS 挂载，项目目录可写，运行时资源只读。 [虚拟机配置](../claude-tauri/native/HavenVM.swift#L128) · [数据盘创建](../claude-tauri/src-tauri/src/runtime/macos.rs#L167) · [启动脚本](../claude-vm/macos/initramfs-init.sh#L14) | Apple Silicon、macOS 14+，使用 Lima 的 VZ 驱动运行 Debian 13 ARM64。首次准备独立系统镜像及工具。 [平台指南](https://github.com/Lee-xeo/Claude-Cage/blob/c53ce0004247b57b47f16c8b5d12f4b8b5d88df5/docs/guide/guest-systems.md#L10-L16) · [VZ 驱动](https://github.com/Lee-xeo/Claude-Cage/blob/c53ce0004247b57b47f16c8b5d12f4b8b5d88df5/internal/vm/driver_vz_darwin.go) |
+| Linux 主机 | 当前基线支持 Windows x64 和 Apple Silicon Mac。 [Haven 平台说明](../README.zh-CN.md#L25) | Debian 12 和 Ubuntu 22.04 / 24.04 x86_64 提供桌面包，本机运行需要 QEMU 工具和 KVM 权限。另有 SSH 连接自托管 Linux 容器的入口，远端部署无需 KVM。 [Linux 指南](https://github.com/Lee-xeo/Claude-Cage/blob/c53ce0004247b57b47f16c8b5d12f4b8b5d88df5/docs/linux.md#L3-L37) · [云端部署](https://github.com/Lee-xeo/Claude-Cage/tree/c53ce0004247b57b47f16c8b5d12f4b8b5d88df5/deploy/cloud) |
+
+Cage 当前主线把 Debian 13 作为三平台统一的本机环境。已发布的 `v0.1.8` 标签文档还列出 Ubuntu 22.04、Mac 上的 macOS 客机，以及具备完整 Hyper-V 的 Windows 11 专业版、企业版或教育版上的 Windows 客机。其中一些路径有部分实机验证，完整范围见发行说明。仅从底层源码仍保有驱动，无法判断当前版本的工作台是否提供对应入口。 [主线客机指南](https://github.com/Lee-xeo/Claude-Cage/blob/c53ce0004247b57b47f16c8b5d12f4b8b5d88df5/docs/guide/guest-systems.md) · [发行标签客机指南](https://github.com/Lee-xeo/Claude-Cage/blob/9a35a1452cc893525a7fcf50da172d83bc4c4a81/docs/guide/guest-systems.md#L14-L39) · [v0.1.8 发行说明](https://github.com/Lee-xeo/Claude-Cage/releases/tag/v0.1.8)
+
+Cage 文档列出 Debian 13 基础镜像约 320–325 MiB、虚拟盘初始容量上限 24 GiB，使用量随写入增加。程序、配置、环境和共享原目录分别管理，工作台支持环境选盘和停机后复制校验迁移。Haven Windows 已验证从主机文件直接挂载 SquashFS 和持久化写入，精简方案的原型文件逻辑长度合计 600,049,030 字节。基线实际入口依旧走 WSL 归档导入，完整首次启动后的宿主占用尚未验收。 [Cage 存储指南](https://github.com/Lee-xeo/Claude-Cage/blob/c53ce0004247b57b47f16c8b5d12f4b8b5d88df5/docs/guide/guest-systems.md#L41-L45) · [Cage 迁移流程](https://github.com/Lee-xeo/Claude-Cage/blob/c53ce0004247b57b47f16c8b5d12f4b8b5d88df5/docs/guide/maintenance.md#L36-L45) · [Haven 原型记录](windows-storage-research.md#预装输入法与精简镜像)
+
+## 网络故障时的隔离边界
+
+- **Haven 在客机里执行控制。** 客机内 Mihomo TUN 接管业务流量及 DNS，Netlink 删除主路由表的默认路由、关闭 IPv6，并保留节点所需的上游路由。启动脚本先准备代理和路由，再运行预检、看门狗及桌面。宿主在守卫状态达到条件后才把桌面标记为就绪。代理初始化需要原始路由，macOS VM 还挂有 VZ NAT 网卡。结合 WSL interop 的默认配置，结论适用于客机业务流量在路由守卫建立后的日常故障场景，宿主侧独立阻断、整个开机阶段及管理员主动改路由均需单独验证。 [启动顺序](../claude-vm/vm/scripts/entrypoint.sh#L52) · [路由守卫](../claude-vm/vm/scripts/net-guard.py#L305) · [就绪判断](../claude-tauri/src-tauri/src/runtime.rs#L360) · [VZ 网卡配置](../claude-tauri/native/HavenVM.swift#L144) · [WSL 配置](../claude-vm/vm/Dockerfile#L31)
+- **Cage 在宿主控制客机出口。** 受限启动只接受可接入专用宿主网络栈的 QEMU / VZ 驱动并拒绝配置中的额外网络。业务 TCP 经受管代理，业务 DNS 使用同一代理的 DoH 路径，公网 UDP、ICMP 和 IPv6 直连受限。业务默认关闭，隔离和出口报告通过后才开放，授权租期上限 90 秒。代理配置变更、显式关闭或租期失效会撤销授权并关闭追踪中的连接。此边界由宿主执行，因此从设计上减少了对客机内路由和守卫进程完整性的依赖。镜像下载和获准的宿主准备通信另走宿主网络。 [驱动约束](https://github.com/Lee-xeo/Claude-Cage/blob/c53ce0004247b57b47f16c8b5d12f4b8b5d88df5/internal/vm/networkconfined.go#L10-L36) · [出口实现](https://github.com/Lee-xeo/Claude-Cage/blob/c53ce0004247b57b47f16c8b5d12f4b8b5d88df5/internal/cage/egress.go#L41-L60) · [授权和连接管理](https://github.com/Lee-xeo/Claude-Cage/blob/c53ce0004247b57b47f16c8b5d12f4b8b5d88df5/internal/cage/gate.go#L166-L318) · [网络指南](https://github.com/Lee-xeo/Claude-Cage/blob/c53ce0004247b57b47f16c8b5d12f4b8b5d88df5/docs/guide/network.md#L105-L164)
+- **两边的检测覆盖不同。** Haven 本地检查围绕守卫状态、Mihomo / Meta、路由和 DNS 配置，守卫预检还检查出口地区。Cage 文档要求从宿主、终端和浏览器采样出口，并检查 DNS、IPv6、宿主管理接口与共享目录等隔离项。周期抽样只报告已测到的出口，无法替第三方代理保证每条连接的实际出口。 [Haven 守卫预检](../claude-vm/vm/scripts/net-guard.sh#L136) · [Haven 网络检查](../claude-vm/vm/scripts/check-network.py#L36) · [Cage 网络检查和复检](https://github.com/Lee-xeo/Claude-Cage/blob/c53ce0004247b57b47f16c8b5d12f4b8b5d88df5/docs/guide/network.md#L105-L158)
+
+## 桌面和首次安装
+
+- **Haven 提供一张完整 Linux 桌面。** Tauri 窗口嵌入 noVNC，通过 TigerVNC 串流 Openbox 桌面，其中运行 Claude Code、Chrome、终端和文件管理器。内置 fcitx5 / Rime 和文本剪贴板，共享文件通过选定项目目录读写。macOS 随包提供 Linux 运行时。Windows 复用已有 WSL2，缺失时按引导流程获取固定的微软 WSL 3.0.5 x64 MSI，通过大小、SHA-256 及 Authenticode 校验后进入安装流程。 [使用说明](../README.zh-CN.md#在桌面中工作) · [桌面入口](../claude-vm/vm/scripts/entrypoint.sh#L425) · [WSL 引导验证](wsl-bootstrap-validation.md)
+- **Cage 提供按项目组织的工作台。** 项目可共享多个目录，工作台整合 Claude Code 与普通终端、Chromium、code-server 和按需安装的官方 Claude Desktop。支持分屏、文字和图像等剪贴板传递，也可让手机接续会话。需要额外虚拟机的 Cowork 暂无支持。首次启动还要获取系统镜像和工具，初始化文档记录了下载续传。Windows 需具备 WHP，Linux 需另备 KVM 和对应的 QEMU 工具。 [工作台](https://github.com/Lee-xeo/Claude-Cage/blob/c53ce0004247b57b47f16c8b5d12f4b8b5d88df5/docs/guide/workbench.md) · [Claude Desktop](https://github.com/Lee-xeo/Claude-Cage/blob/c53ce0004247b57b47f16c8b5d12f4b8b5d88df5/docs/guide/desktop.md) · [手机](https://github.com/Lee-xeo/Claude-Cage/blob/c53ce0004247b57b47f16c8b5d12f4b8b5d88df5/docs/guide/mobile.md) · [安装](https://github.com/Lee-xeo/Claude-Cage/blob/c53ce0004247b57b47f16c8b5d12f4b8b5d88df5/docs/guide/installation.md)
+
+| 公开发行资产 | Claude Haven v0.1.1 | Claude Cage v0.1.8 |
+| --- | ---: | ---: |
+| Windows x64 EXE | 720,880,640 字节（687.5 MiB） | 484,402,040 字节（462.0 MiB） |
+| Apple Silicon DMG | 461,080,659 字节（439.7 MiB） | 207,154,169 字节（197.6 MiB） |
+| Linux x86_64 DEB | 无 | 121,173,898 字节（115.6 MiB） |
+
+上表为 GitHub 发行 API 的资产文件长度。Haven 包含 Linux 镜像，Cage 的工作环境另行初始化，Windows 没有 WSL 时 Haven 也可能额外下载 367,788,032 字节的 MSI。Haven README 的约 400 MB / 600 MB 与上述公开文件长度有差异。比较首次可用下载量、完成后的磁盘占用和冷启动速度，需要在相同硬件、网络和功能范围下另外量测。 [Haven 资产清单](https://api.github.com/repos/KeithMorning/ClaudeHaven/releases/tags/v0.1.1) · [Cage 资产清单](https://api.github.com/repos/Lee-xeo/Claude-Cage/releases/tags/v0.1.8) · [Haven README](../README.zh-CN.md#L3) · [微软 MSI 验证记录](wsl-bootstrap-validation.md#官方-msi-实测)
+
+Cage `v0.1.8` 发布记录确认 Mac 安装包完成 Developer ID 签名、Apple 公证和 Gatekeeper 检查，Windows 安装器通过可信 Authenticode 签名及云端安装验收，Linux 包通过 Debian / Ubuntu 兼容性验收。记录仍将真实 Windows Hyper-V、Linux KVM、Intel Mac 客机及 Claude 授权与模型请求列在未完成的验收范围。Haven `v0.1.1` 标为开发预览，发布说明明确 Mac 应用未公证。Haven 仓库记录了 WSL MSI 下载和验签，但洁净 Windows 的安装、重启续接与普通用户首次导入仍待实机验证。 [Cage 发行记录](https://github.com/Lee-xeo/Claude-Cage/releases/tag/v0.1.8) · [Haven 发行记录](https://github.com/KeithMorning/ClaudeHaven/releases/tag/v0.1.1) · [Haven WSL 验收范围](wsl-bootstrap-validation.md#phase-a-未完成项)

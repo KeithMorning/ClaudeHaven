@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * 消除 Chrome「恢复页面 / Chrome didn't shut down correctly」气泡。
+ * 设置 Chrome 主页和默认外观，并消除意外退出后的恢复提示。
  * 每次强制停止环境都会留下 exited_cleanly=false，下次启动必弹。
  */
 const fs = require('fs');
@@ -13,17 +13,27 @@ const DEFAULT_BOOKMARKS = [
   { name: 'Claude', url: 'https://claude.ai/' },
   { name: 'Net.Coffee IP 检测', url: 'https://ip.net.coffee/claude/' },
 ];
+const appearanceOnly = process.argv.includes('--appearance-only');
+const SYSTEM_COLOR_SCHEME = 0;
+const DARK_COLOR_SCHEME = 2;
 
 function patch(file) {
   try {
     const j = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : {};
-    j.profile = j.profile || {};
-    j.profile.exit_type = 'Normal';
-    j.profile.exited_cleanly = true;
+    if (!appearanceOnly) {
+      j.profile = j.profile || {};
+      j.profile.exit_type = 'Normal';
+      j.profile.exited_cleanly = true;
+    }
     j.homepage = 'https://fuck-claude.vercel.app/';
     j.homepage_is_newtabpage = false;
     j.browser = j.browser || {};
     j.browser.show_home_button = true;
+    j.browser.theme = j.browser.theme || {};
+    const scheme = j.browser.theme.color_scheme2 ?? SYSTEM_COLOR_SCHEME;
+    if (scheme === SYSTEM_COLOR_SCHEME) {
+      j.browser.theme.color_scheme2 = DARK_COLOR_SCHEME;
+    }
     j.bookmark_bar = j.bookmark_bar || {};
     j.bookmark_bar.show_on_all_tabs = true;
     fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -93,5 +103,5 @@ if (fs.existsSync(BASE)) {
 }
 if ((!hasDefault || !fs.existsSync(path.join(BASE, 'Default', 'Preferences'))) &&
     patch(path.join(BASE, 'Default', 'Preferences'))) n++;
-ensureDefaultBookmarks(path.join(BASE, 'Default'));
+if (!appearanceOnly) ensureDefaultBookmarks(path.join(BASE, 'Default'));
 if (process.env.VERBOSE) console.log(`[chrome-prefs] 已复位 ${n} 个 profile`);

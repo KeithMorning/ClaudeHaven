@@ -15,10 +15,11 @@ RUN sed -i -E 's@https?://(archive|security)\.ubuntu\.com@http://mirrors.ustc.ed
 #   现在统一用 Fira Code（拉丁等宽，无连字陷阱）+ 系统自带 DejaVu 做界面字体。
 RUN apt-get update && apt-get install -y --no-install-recommends \
     locales tzdata \
-    openbox tint2 feh xterm pcmanfm x11-xserver-utils xauth \
+    openbox tint2 feh xterm x11-xserver-utils xauth \
+    python3-gi gir1.2-vte-2.91 \
     tigervnc-standalone-server tigervnc-common tigervnc-tools \
     novnc websockify xz-utils \
-    fonts-firacode fonts-noto-color-emoji fonts-dejavu-core \
+    fonts-firacode fonts-jetbrains-mono fonts-symbola fonts-noto-color-emoji fonts-dejavu-core \
     git curl wget aria2 ca-certificates gnupg sudo dbus-x11 \
     openssh-client netcat-openbsd \
     && rm -rf /var/lib/apt/lists/*
@@ -95,6 +96,7 @@ RUN set -eu; \
 # 脚本与桌面资源（主题 / 启动器 / 串流页面 / 欢迎页）
 COPY scripts/ /opt/scripts/
 COPY config/ /opt/config/
+COPY assets/wallpaper/claude-haven.png /opt/wall/source.png
 COPY config/themes/Claude /usr/share/themes/Claude
 RUN chmod +x /opt/scripts/*.sh \
     && cp /opt/config/apps/*.desktop /usr/share/applications/ 2>/dev/null || true

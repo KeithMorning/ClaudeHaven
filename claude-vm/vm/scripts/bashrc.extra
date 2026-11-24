@@ -1,8 +1,20 @@
-# ---- Claude Workspace ----
-# 提示符不写 user@host：这是「像服务器」最明显的记号
-PS1='\[\e[38;5;179m\]\w\[\e[0m\] \[\e[38;5;111m\]\$\e[0m\] '
-PROMPT_COMMAND=''
+# ---- Claude Haven terminal ----
+# Keep the prompt compact; the directory and Git branch are enough context.
+__haven_prompt() {
+  local branch display_path
+  branch=$(git symbolic-ref --quiet --short HEAD 2>/dev/null) || branch=
+  display_path=${PWD/#$HOME/~}
+  printf '\033[48;2;55;38;30m\033[38;2;255;145;75m  🗁  %s  \033[0m' "$display_path"
+  if [ -n "$branch" ]; then
+    printf '  \033[38;2;215;155;234mgit:%s\033[0m' "$branch"
+  fi
+  printf '\n'
+  PS1='\[\e[38;2;255;145;75m\]\$\[\e[0m\] '
+  printf '\033]0;Terminal — %s\007' "$display_path"
+}
+PROMPT_COMMAND=__haven_prompt
 export TERM=xterm-256color 2>/dev/null
+export LS_COLORS='di=01;38;2;255;145;75:ln=38;2;215;155;234:ex=01;38;2;190;224;145:fi=0;38;2;241;238;235:*.md=0;38;2;241;238;235'
 alias ll='ls -alF --color=auto'
 alias la='ls -A --color=auto'
 alias ..='cd ..'

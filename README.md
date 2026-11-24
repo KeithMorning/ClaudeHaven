@@ -58,6 +58,8 @@ Return to **Desktop** and click **Start virtual environment**. On Windows, the a
 
 ![Browser running in the Claude Haven desktop](assets/screenshots/claude-haven-browser.png)
 
+![Claude Code running in the Claude Haven terminal](assets/screenshots/claude-haven-claude-code.png)
+
 ## Troubleshooting
 
 **Windows says WSL2 is not ready**

@@ -58,6 +58,8 @@ macOS 现已支持 Apple Silicon（M 系列芯片）和 macOS 13 及更新版本
 
 ![Claude Haven 虚拟桌面中的浏览器](assets/screenshots/claude-haven-browser.png)
 
+![Claude Haven 终端中的 Claude Code](assets/screenshots/claude-haven-claude-code.png)
+
 ## 常见问题
 
 **启动时提示 WSL 2 未就绪（Windows）**

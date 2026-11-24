@@ -142,8 +142,27 @@ patch:
 YAML
 
 # fcitx5 的输入法组配置：默认引擎设为 rime（写 profile，无图形界面也能配）。
-# 单按 Shift 在 Rime 中切换中英文；输入法开关支持 Super+Space 和 Ctrl+Space。
+# 中英文都由 Fcitx 切换，英文键盘下单按 Shift 也能回到 Rime。
 mkdir -p /root/.config/fcitx5
+# Fcitx 的键盘布局默认标签为小写 en。托盘直接绘制输入法条目的 Label，
+# 用用户级静态条目覆盖键盘布局标签；切换与输入逻辑仍由 Fcitx 管理。
+mkdir -p /root/.local/share/fcitx5/inputmethod
+_keyboard=/opt/assets/config/fcitx5/keyboard-us.conf
+[ -f "$_keyboard" ] || _keyboard=/opt/config/fcitx5/keyboard-us.conf
+[ ! -f "$_keyboard" ] || cp -f "$_keyboard" /root/.local/share/fcitx5/inputmethod/keyboard-us.conf
+# Rime 的中文与内部英文模式使用不同图标名称。把轻量 SVG 放到用户图标
+# 目录中，避免依赖发行版默认图标的造型，也避免改变输入法的快捷键。
+_icons=/opt/assets/config/fcitx5/icons
+[ -f "$_icons/fcitx-rime.png" ] || _icons=/opt/config/fcitx5/icons
+if [ -f "$_icons/fcitx-rime.png" ]; then
+  _icon_dest=/root/.local/share/icons/hicolor/48x48/apps
+  mkdir -p "$_icon_dest"
+  # 用户级 hicolor 目录需要主题索引，否则新图标可能无法被 Fcitx 找到。
+  [ -f /root/.local/share/icons/hicolor/index.theme ] || cp -f /usr/share/icons/hicolor/index.theme /root/.local/share/icons/hicolor/index.theme
+  cp -f "$_icons"/*.png "$_icon_dest"/
+  cp -f "$_icons/fcitx-rime-latin.png" "$_icon_dest/fcitx_rime_latin.png"
+  cp -f "$_icons/fcitx-rime-latin.png" "$_icon_dest/fcitx_rime_latin_upper.png"
+fi
 # 安装随应用同步的候选框主题；老安装包没有资源时沿用原主题。
 _theme=/opt/assets/config/fcitx5/claude
 [ -f "$_theme/theme.conf" ] || _theme=/opt/config/fcitx5/claude
@@ -179,9 +198,14 @@ PROFILE
 # 关掉「在应用中显示预编辑」，让 classicui 自己画编码：零候选时窗口仍保持
 # IsViewable 并显示输入码。配置项来自 fcitx5 核心库的 PreeditEnabledByDefault。
 cat > /root/.config/fcitx5/config <<'CONF'
+[Hotkey]
+AltTriggerKeys=
+
 [Hotkey/TriggerKeys]
 0=Super+space
 1=Control+space
+2=Shift_L
+3=Shift_R
 
 [Behavior]
 PreeditEnabledByDefault=False

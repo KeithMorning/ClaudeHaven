@@ -279,6 +279,8 @@ fi
 # 3.1) 启动器：面板上的四个图标 + 桌面右键菜单
 cp -f /opt/config/apps/*.desktop ~/.local/share/applications/ 2>/dev/null || true
 cp -f /opt/config/apps/*.desktop /usr/share/applications/ 2>/dev/null || true
+cp -f /opt/assets/config/apps/*.desktop ~/.local/share/applications/ 2>/dev/null || true
+cp -f /opt/assets/config/apps/*.desktop /usr/share/applications/ 2>/dev/null || true
 cp -f /opt/config/menu.xml ~/.config/openbox/menu.xml
 # 窗口管理器配置优先取随客户端更新的副本（1.0.27 修了标题栏 ✕ 点了没反应），
 # 没有才回退镜像内 /opt/config 的旧版 —— 这样不用重建 620MB rootfs 就能让修复生效。
@@ -344,13 +346,23 @@ _theme_dir=/opt/assets/config/themes/Claude/openbox-3
 [ -d "$_theme_dir" ] || _theme_dir=/opt/config/themes/Claude/openbox-3
 cp -f "$_theme_dir"/*.xbm /usr/share/themes/Claude/openbox-3/ 2>/dev/null || true
 
-# 3.2) 图标与壁纸（自绘 PNG：Fira Code 字形 + 品牌橙，避免方块感强的位图图标）
+# 3.2) 图标与壁纸
 node /opt/scripts/gen-art.js icons /opt/icons 64 >/dev/null 2>&1 || true
-[ ! -f /opt/assets/icons/chrome.png ] || cp -f /opt/assets/icons/chrome.png /opt/icons/globe.png
+[ ! -f /opt/assets/icons/chrome.png ] || cp -f /opt/assets/icons/chrome.png /opt/icons/chrome.png
 [ ! -f /opt/assets/icons/claude-mascot.png ] || cp -f /opt/assets/icons/claude-mascot.png /opt/icons/claude.png
-if [ ! -f /opt/wall/wall.png ]; then
-  node /opt/scripts/gen-art.js wallpaper /opt/wall/wall.png 1280 800 >/dev/null 2>&1 || true
+if ! python3 /opt/scripts/normalize-launcher-icons.py /opt/icons; then
+  mkdir -p /opt/icons/launcher
+  for icon in chrome claude terminal folder; do
+    cp -f "/opt/icons/$icon.png" "/opt/icons/launcher/$icon.png" || true
+  done
 fi
+_wallpaper=/opt/assets/wallpaper/claude-haven.png
+[ -f "$_wallpaper" ] || _wallpaper=/opt/wall/source.png
+if [ -f "$_wallpaper" ] && ! cmp -s "$_wallpaper" /opt/wall/wall.png; then
+  cp -f "$_wallpaper" /opt/wall/wall.png
+fi
+# 旧版客户端仍用这个标记决定是否重新生成渐变图，保留它以免旧程序覆盖新壁纸。
+printf 'graphite-1' > /opt/wall/.theme-version
 
 # 3.3) GTK 深色外观（文件管理器 / 对话框）
 cat > ~/.config/gtk-3.0/settings.ini <<'GTK3'
@@ -365,21 +377,25 @@ gtk-theme-name="Adwaita-dark"
 gtk-icon-theme-name="Adwaita"
 gtk-font-name="DejaVu Sans 10"
 style "default" {
-  fg[NORMAL] = "#e6eaf2"
+  fg[NORMAL] = "#f3efeb"
   fg[PRELIGHT] = "#ffffff"
-  bg[NORMAL] = "#20202c"
-  bg[PRELIGHT] = "#37313a"
-  bg[SELECTED] = "#f0825a"
-  base[NORMAL] = "#14141f"
-  text[NORMAL] = "#e6eaf2"
+  bg[NORMAL] = "#1b1a19"
+  bg[PRELIGHT] = "#30251f"
+  bg[SELECTED] = "#d47b49"
+  base[NORMAL] = "#141414"
+  text[NORMAL] = "#f3efeb"
 }
 class "GtkWidget" style "default"
 GTK2
 cat > ~/.config/gtk-3.0/gtk.css <<'GTKCSS'
-menubar, .menubar { background: #20202c; color: #e6eaf2; }
-menubar > menuitem:hover, .menubar > menuitem:hover { background: #37313a; }
-scrollbar slider { min-width: 8px; min-height: 8px; border-radius: 6px; background: #55515d; }
-scrollbar slider:hover { background: #f0825a; }
+menubar, .menubar { background: #1b1a19; color: #f3efeb; }
+menubar > menuitem:hover, .menubar > menuitem:hover { background: #30251f; }
+notebook > header { background: #171615; border-bottom: 1px solid #373330; }
+notebook > header > tabs > tab { min-height: 32px; padding: 4px 16px; background: #171615; color: #b8ada5; border: 0; }
+notebook > header > tabs > tab:checked { background: #27211e; color: #f3efeb; border-bottom: 2px solid #ff914b; }
+scrollbar.vertical { min-width: 11px; background: #1e1d1c; border: 0; }
+scrollbar.vertical slider { min-width: 6px; margin: 2px; border-radius: 6px; background: #895337; }
+scrollbar.vertical slider:hover { background: #c87542; }
 GTKCSS
 
 # 3.4) 终端提示符：去掉 user@host（那是最像服务器的记号）

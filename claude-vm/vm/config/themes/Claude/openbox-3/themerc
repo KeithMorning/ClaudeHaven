@@ -4,47 +4,47 @@
 
 !! ---------------- 窗口 ----------------
 window.active.title.bg: flat solid
-window.active.title.bg.color: #20202c
+window.active.title.bg.color: #1b1a19
 window.active.label.bg: parentrelative
-window.active.label.text.color: #e8edf5
-window.active.border.color: #45414a
-window.active.client.color: #0d1017
+window.active.label.text.color: #f3efeb
+window.active.border.color: #4b4947
+window.active.client.color: #121212
 window.active.handle.bg: flat solid
-window.active.handle.bg.color: #20202c
+window.active.handle.bg.color: #1b1a19
 window.active.grip.bg: flat solid
-window.active.grip.bg.color: #1c2534
+window.active.grip.bg.color: #302520
 
 window.inactive.title.bg: flat solid
-window.inactive.title.bg.color: #171721
+window.inactive.title.bg.color: #171615
 window.inactive.label.bg: parentrelative
-window.inactive.label.text.color: #7d899c
-window.inactive.border.color: #1e2632
-window.inactive.client.color: #0d1017
+window.inactive.label.text.color: #9b928b
+window.inactive.border.color: #363331
+window.inactive.client.color: #121212
 window.inactive.handle.bg: flat solid
-window.inactive.handle.bg.color: #141a24
+window.inactive.handle.bg.color: #171615
 window.inactive.grip.bg: flat solid
-window.inactive.grip.bg.color: #141a24
+window.inactive.grip.bg.color: #171615
 
-window.label.active.text.color: #e8edf5
-window.label.inactive.text.color: #7d899c
+window.label.active.text.color: #f3efeb
+window.label.inactive.text.color: #9b928b
 window.label.active.text.justify: left
 window.label.inactive.text.justify: left
-window.active.title.separator.color: #2b3546
-window.inactive.title.separator.color: #1e2632
+window.active.title.separator.color: #373330
+window.inactive.title.separator.color: #292725
 
 !! 按钮：透明底 + 单色字形（不开方框，避免出现一块块色斑）
 window.*.button.*.bg: parentrelative
-window.active.button.*.image.color: #b9c4d6
+window.active.button.*.image.color: #d9d0c9
 window.active.button.*.hover.image.color: #ffffff
-window.inactive.button.*.image.color: #6e7a8d
+window.inactive.button.*.image.color: #8f8781
 window.active.button.*.hover.bg: flat solid
-window.active.button.*.hover.bg.color: #2b3546
+window.active.button.*.hover.bg.color: #30251f
 window.inactive.button.*.hover.bg: flat solid
-window.inactive.button.*.hover.bg.color: #1e2632
+window.inactive.button.*.hover.bg.color: #24211f
 window.active.button.*.pressed.bg: flat solid
-window.active.button.*.pressed.bg.color: #3a465c
+window.active.button.*.pressed.bg.color: #3b2a21
 window.inactive.button.*.pressed.bg: flat solid
-window.inactive.button.*.pressed.bg.color: #26303f
+window.inactive.button.*.pressed.bg.color: #2b2521
 
 !! ---------------- 尺寸 ----------------
 border.width: 1
@@ -55,21 +55,21 @@ window.client.padding.width: 0
 window.client.padding.height: 0
 
 !! ---------------- 菜单 ----------------
-menu.border.color: #2b3546
+menu.border.color: #403b37
 menu.items.bg: flat solid
-menu.items.bg.color: #151b25
-menu.items.text.color: #d6dee9
-menu.items.disabled.text.color: #5e6a7c
+menu.items.bg.color: #1b1a19
+menu.items.text.color: #e2d9d1
+menu.items.disabled.text.color: #817871
 menu.items.active.bg: flat solid
-menu.items.active.bg.color: #2b3546
+menu.items.active.bg.color: #3a2b24
 menu.items.active.text.color: #ffffff
 menu.title.bg: flat solid
-menu.title.bg.color: #1f2938
-menu.title.text.color: #9aa6b8
-menu.separator.color: #2b3546
+menu.title.bg.color: #27221f
+menu.title.text.color: #b6a79c
+menu.separator.color: #403b37
 
 !! ---------------- 屏幕提示 ----------------
 osd.bg: flat solid
-osd.bg.color: #151b25
-osd.border.color: #2b3546
-osd.text.color: #e8edf5
+osd.bg.color: #1b1a19
+osd.border.color: #403b37
+osd.text.color: #f3efeb
