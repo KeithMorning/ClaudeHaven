@@ -489,9 +489,15 @@ pub(crate) fn verify_existing_desktop() -> Result<(), String> {
         "set -eu\ntest -f /run/claude-vm/ready\npgrep -f '[w]ebsockify --web=' >/dev/null\n",
     )
     .map_err(|_| "已有会话的桌面未就绪，请停止环境后重新启动。".to_string())?;
-    let address = std::net::SocketAddr::from(([127, 0, 0, 1], 6080));
-    std::net::TcpStream::connect_timeout(&address, std::time::Duration::from_millis(300))
+    #[cfg(target_os = "macos")]
+    macos::desktop_http_ready()
         .map_err(|_| "无法连接已有虚拟桌面，请停止环境后重新启动。".to_string())?;
+    #[cfg(windows)]
+    {
+        let address = std::net::SocketAddr::from(([127, 0, 0, 1], 6080));
+        std::net::TcpStream::connect_timeout(&address, std::time::Duration::from_millis(300))
+            .map_err(|_| "无法连接已有虚拟桌面，请停止环境后重新启动。".to_string())?;
+    }
     Ok(())
 }
 
@@ -1408,7 +1414,15 @@ impl LaunchOperations for MacLaunch {
             &self.manifest,
             &self.asset_files,
         );
-        if guest_script(&script)?.lines().any(|s| s.trim() == "SYNCED") {
+        let script = script + r#"
+chmod 755 /opt/scripts/host-npm.py
+mkdir -p /usr/local/bin
+if [ ! -e /usr/local/bin/mac ] && [ ! -L /usr/local/bin/mac ]; then
+    ln -s /opt/scripts/host-npm.py /usr/local/bin/mac
+fi
+printf 'MAC_TOOLS_READY\n'
+"#;
+        if guest_script(&script)?.lines().any(|s| s.trim() == "MAC_TOOLS_READY") {
             Ok(())
         } else {
             Err("运行时同步未完成，已中止启动。".into())
@@ -1447,11 +1461,8 @@ impl LaunchOperations for MacLaunch {
                     cat /run/claude-vm/startup-stage
                  fi",
             ) {
-                if status == "READY" {
-                    let address = std::net::SocketAddr::from(([127, 0, 0, 1], 6080));
-                    if std::net::TcpStream::connect_timeout(&address, Duration::from_millis(300)).is_ok() {
-                        return Ok(());
-                    }
+                if status == "READY" && macos::desktop_http_ready().is_ok() {
+                    return Ok(());
                 }
                 if let Some(code) = status.strip_prefix("EXIT ") {
                     let phase = stages[current_stage.unwrap_or(0)].2;

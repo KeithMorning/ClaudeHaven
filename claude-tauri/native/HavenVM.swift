@@ -15,6 +15,7 @@ func fail(_ error: Error) -> Never {
 func listenSocket<T>(_ address: inout T, family: Int32) throws -> Int32 {
     let fd = socket(family, SOCK_STREAM, 0)
     guard fd >= 0 else { throw LaunchError("无法创建本地套接字") }
+    _ = fcntl(fd, F_SETFD, FD_CLOEXEC)
     var enabled: Int32 = 1
     setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &enabled, socklen_t(MemoryLayout<Int32>.size))
     let size = socklen_t(MemoryLayout<T>.size)
@@ -92,6 +93,7 @@ func bridge(_ listener: Int32, to port: UInt32, vm: VZVirtualMachine) {
         while true {
             let client = accept(listener, nil, nil)
             if client < 0 { return }
+            _ = fcntl(client, F_SETFD, FD_CLOEXEC)
             DispatchQueue.main.async {
                 guard vm.state == .running,
                       let device = vm.socketDevices.first as? VZVirtioSocketDevice else {
@@ -173,12 +175,17 @@ func run() throws {
     config.serialPorts = [console]
     try config.validate()
     let vm = VZVirtualMachine(configuration: config)
+    let hostNpm = HostNpm(workspace: args[5], disk: args[4])
+    let npmListener = VZVirtioSocketListener()
+    npmListener.delegate = hostNpm
+    (vm.socketDevices.first as? VZVirtioSocketDevice)?.setSocketListener(npmListener, forPort: 6082)
     bridge(control, to: 6081, vm: vm)
     bridge(desktop, to: 6080, vm: vm)
     // EOF means the app requested shutdown or its process has exited.
     DispatchQueue.global().async {
         _ = FileHandle.standardInput.readDataToEndOfFile()
         DispatchQueue.main.async {
+            hostNpm.stop()
             if vm.state == .stopped { exit(0) }
             requestGuestShutdown(vm)
             let timer = DispatchSource.makeTimerSource(queue: .main)
@@ -206,4 +213,12 @@ func run() throws {
     dispatchMain()
 }
 
-do { try run() } catch { fail(error) }
+@main
+struct HavenVMMain {
+    static func main() {
+        if CommandLine.arguments.dropFirst().first == "--host-npm-child" {
+            runHostNpmChild()
+        }
+        do { try run() } catch { fail(error) }
+    }
+}

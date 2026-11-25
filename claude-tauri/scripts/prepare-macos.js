@@ -20,7 +20,7 @@ const moduleCache = path.join(runtime, '.swift-cache');
 try {
   execFileSync('xcrun', [
     'swiftc', '-O', '-module-cache-path', moduleCache, '-target', 'arm64-apple-macos13.0',
-    path.join(native, 'HavenVM.swift'), '-o', executable,
+    path.join(native, 'HavenVM.swift'), path.join(native, 'HostNpm.swift'), '-o', executable,
   ], { stdio: 'inherit' });
 } finally {
   fs.rmSync(moduleCache, { recursive: true, force: true });

@@ -68,6 +68,34 @@ Mac 直接挂载应用内的只读压缩系统盘。Linux 将改动写入 `nativ
 
 本地开发构建不等于正式发行。公开分发还需要对应用进行 Developer ID 签名、公证，并验证目标 Mac 上的安装和首次启动流程。
 
+## 从 Linux 工作区调用 Mac 工具
+
+在 Mac 的 `~/Library/Application Support/com.claudevm.workspace/native-vm/host-npm.json` 创建授权文件，并设置权限为 `600`。启动过一次虚拟机后会有这个目录。填写应用当前选中的 Mac 工作区和要转发的工具绝对路径。以下路径请替换为本机安装位置。
+
+```json
+{
+  "workspace": "/Users/yourname/Projects/my-project",
+  "tools": {
+    "node": "/Users/yourname/.nvm/versions/node/v22.21.1/bin/node",
+    "npm": "/Users/yourname/.nvm/versions/node/v22.21.1/bin/npm",
+    "python3": "/opt/homebrew/bin/python3"
+  }
+}
+```
+
+保存后，在 Linux 终端进入 `/workspace` 或其下含有 `package.json` 的目录：
+
+```sh
+mac node scripts/check.js
+mac npm run build
+mac python3 tools/generate.py
+mac claude
+```
+
+用 `mac claude` 打开会话后，Claude Code 可以直接执行 `npm run lint`、`node script.js` 等命令。会话启动时读取工具名，匹配的命令连同参数发给 Mac，实时返回输出和退出码。其他命令及 shell 运算符仍由 Linux 处理。工具应使用工作区内的相对路径，此模式目前适用于非交互命令。
+
+授权工具可使用 Mac 当前用户的权限和网络执行任意受该工具支持的参数。请只给可信工作区授权。修改后续调用的权限无需重启虚拟机，新增工具后重新打开 `mac claude` 会话即可。旧的 `node` 与 `allowBuild` 配置仍支持原有的版本查询和构建。使用含原生模块的项目时，请在 Mac 侧准备依赖。
+
 ## Windows 构建不变
 
 Windows 继续使用 Tauri + WSL2 和 Windows rootfs，按[Windows 开发指南](development.md#windows-x64-开发)操作。macOS 的 Swift 虚拟机助手和 Apple Virtualization.framework 配置只在 macOS 构建中使用，不会替换 Windows 的运行时。

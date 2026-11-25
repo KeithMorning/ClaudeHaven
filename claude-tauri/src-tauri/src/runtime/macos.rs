@@ -34,6 +34,25 @@ pub fn available() -> bool {
     cfg!(target_arch = "aarch64")
 }
 
+pub(super) fn desktop_http_ready() -> io::Result<()> {
+    use std::net::{SocketAddr, TcpStream};
+
+    // The host bridge can accept TCP before the guest serves the desktop page.
+    let address = SocketAddr::from(([127, 0, 0, 1], 6080));
+    let timeout = Duration::from_millis(500);
+    let mut stream = TcpStream::connect_timeout(&address, timeout)?;
+    stream.set_read_timeout(Some(timeout))?;
+    stream.set_write_timeout(Some(timeout))?;
+    stream.write_all(b"GET /desktop.html?autoconnect=1 HTTP/1.1\r\nHost: 127.0.0.1:6080\r\nConnection: close\r\n\r\n")?;
+
+    let mut status = [0; 13];
+    stream.read_exact(&mut status)?;
+    if &status != b"HTTP/1.0 200 " && &status != b"HTTP/1.1 200 " {
+        return Err(io::Error::other("桌面页面还未返回 HTTP 200"));
+    }
+    Ok(())
+}
+
 pub fn resources_ready(root: &Path) -> bool {
     [
         "kernel.tar.xz",

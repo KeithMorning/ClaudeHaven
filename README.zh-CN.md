@@ -46,7 +46,7 @@ VPS 开通后，先在服务商面板找到公网 IP、SSH 用户名、密码或
 
 ### 3. 安装 Claude Haven 并导入配置
 
-从 [v0.1.2 Release](https://github.com/KeithMorning/ClaudeHaven/releases/tag/v0.1.2) 下载 Windows x64 安装包或 Apple Silicon Mac 的 DMG。Windows 用户运行安装器。Mac 用户打开 DMG，再将 Claude Haven 拖入「应用程序」。
+从 [v0.1.2 Release](https://github.com/KeithMorning/ClaudeHaven/releases/tag/v0.1.2) 下载 Windows x64 安装包，或从 [v0.1.3 Release](https://github.com/KeithMorning/ClaudeHaven/releases/tag/v0.1.3) 下载 Apple Silicon Mac DMG。Windows 用户运行安装器。Mac 用户打开 DMG，再将 Claude Haven 拖入「应用程序」。
 
 打开 Claude Haven，进入「系统设置 → 网络连接」，点「选择文件」导入准备好的 `.yaml` 或 `.yml`。在「出口节点」中选中要使用的节点，然后点「保存设置」。如果列表为空，检查 YAML 的顶层 `proxies` 是否列出了节点。
 
