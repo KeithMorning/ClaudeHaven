@@ -26,26 +26,39 @@ macOS is supported on Apple Silicon (M-series) with macOS 13 or later. It uses A
 
 ## Get started
 
-### 1. Download and install
+Have two things ready for your first launch: a **Clash / Mihomo YAML file** with a working egress node and a **local project folder** to share with the virtual desktop. If you already have a suitable YAML file, skip to [installing Claude Haven and importing it](#3-install-claude-haven-and-import-your-configuration).
 
-Download the Windows x64 installer from the [v0.1.2 release](https://github.com/KeithMorning/ClaudeVM/releases/tag/v0.1.2). This release updates Windows only. Apple Silicon Mac users can get the existing DMG from [v0.1.1](https://github.com/KeithMorning/ClaudeVM/releases/tag/v0.1.1). On Mac, open the DMG and drag Claude Haven to the `Applications` shortcut.
+### 1. Prepare a fixed egress IP
 
-### 2. Configure your network
+We recommend a stable, fixed egress IP. You can reuse a working node you already have. To run your own proxy, look for a VPS with a fixed public IP. LisaHost is one example. [LisaHost website](https://lisahost.com/)
 
-When you first open the app, go to **System Settings**:
+On our connection, the **9929 route was more stable than 4837**. Results vary by location, ISP, and time of day. Try the connection on your own network before committing to an annual plan. LisaHost accepts refund requests for eligible services within 48 hours of provisioning. Check the conditions before ordering. [LisaHost plans and routes](https://lisahost.com/cart.php) · [Refund terms](https://lisahost.com/index.php/announcements/2/Terms-Of-Service.html)
 
-1. Under **Network**, select a Clash / Mihomo YAML configuration file from your computer.
-2. Choose an egress node from its proxy list and save the settings.
+### 2. Set up the proxy and create a YAML file
+
+Once the VPS is provisioned, find its public IP, SSH username, password or key, and SSH port in the provider dashboard. Use those details to connect to the server and set up a proxy. The Clash / Mihomo node then uses the proxy protocol, port, and credentials.
+
+1. To get setup help from [DeepSeek Harness](https://www.deepseek.com/harness/en/), download [Claude Guardian](https://github.com/DUNHKpcc/Claude-Guardian) and copy its entire `skills/claude-guardian` folder into `.dsh/skills/` in your Harness project. The entry file should be at `.dsh/skills/claude-guardian/SKILL.md`. [Harness skill directory documentation](https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/skill/skill-filesystem/README.md#roots-and-priority)
+2. Ask Harness to use Claude Guardian's VPS guide to help set up a proxy on your server and generate a `haven.yaml` file for Claude Haven. Ask it to list the node under top-level `proxies` and use placeholders for credentials.
+3. Fill in the actual proxy credentials locally and save the YAML file. Keep SSH passwords, private keys, and the completed YAML out of chats, screenshots, and GitHub issues.
+
+### 3. Install Claude Haven and import your configuration
+
+Download the Windows x64 installer or the Apple Silicon Mac DMG from the [v0.1.2 release](https://github.com/KeithMorning/ClaudeHaven/releases/tag/v0.1.2). On Windows, run the installer. On Mac, open the DMG and drag Claude Haven into Applications.
+
+Open Claude Haven and go to **System Settings → Network**. Click **Choose file** to import your `.yaml` or `.yml` file, select the node you want to use, then click **Save settings**. If the node list is empty, check that your YAML lists nodes under the top-level `proxies` key.
 
 The configuration stays on your computer. At startup, Claude Haven checks the network guard and egress connection. The desktop will not be marked ready if these checks fail, so use a configuration with a working proxy node.
 
-### 3. Choose a workspace
+### 4. Choose a workspace
 
 Open **Workspace**, select a folder on your computer, and save it. The Linux desktop can read and write files in this folder. Only share folders you want the desktop to access.
 
-### 4. Start the desktop
+### 5. Start the desktop
 
 Return to **Desktop** and click **Start virtual environment**. On Windows, the app checks WSL2 on first launch and guides you through setup if required components are missing. On Mac, the Linux system is included with the app; you do not need to install Lima or Docker or download a separate system image. The first launch can take a little while. Keep the app open until startup finishes.
+
+Once the desktop is ready, open **Claude Code** from the taskbar and follow the sign-in prompts. The terminal and file manager can access the project folder you selected in step 4 at `/workspace`.
 
 ## Working in the desktop
 

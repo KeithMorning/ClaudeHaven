@@ -26,26 +26,39 @@ macOS 现已支持 Apple Silicon（M 系列芯片）和 macOS 13 及更新版本
 
 ## 开始使用
 
-### 1. 下载并安装
+首次使用请准备好两样东西：一份包含可用出口节点的 **Clash / Mihomo YAML**，以及一个要共享给虚拟桌面的**本机项目文件夹**。如果已经有符合要求的 YAML，可以跳到[安装 Claude Haven 并导入配置](#3-安装-claude-haven-并导入配置)。
 
-Windows x64 安装包请从 [v0.1.2 Release](https://github.com/KeithMorning/ClaudeVM/releases/tag/v0.1.2) 下载。本次只更新 Windows；Apple Silicon Mac 用户请继续使用 [v0.1.1](https://github.com/KeithMorning/ClaudeVM/releases/tag/v0.1.1) 中的现有 DMG。Mac 用户打开 DMG 后，将 Claude Haven 拖到 `Applications` 快捷方式中。
+### 1. 准备固定出口 IP
 
-### 2. 配置网络
+建议为虚拟桌面选择一个稳定的固定出口。已有可用节点时，可以继续使用。需要自建代理时，可选一台提供固定公网 IP 的 VPS。LisaHost 丽萨主机是可参考的供应商之一。[LisaHost 官网](https://lisahost.com/)
 
-首次打开应用后，进入「系统设置」：
+我们在自己的网络上实测时，**9929 线路比 4837 更稳定**。不同地区、运营商和时段的表现会有差异，建议用自己的网络实际连一段时间，再决定是否年付。LisaHost 符合条件的服务可在开通后 48 小时内申请退款，具体限制请在下单前核对。[LisaHost 套餐与线路](https://lisahost.com/cart.php) · [退款条款](https://lisahost.com/index.php/announcements/2/Terms-Of-Service.html)
 
-1. 在「网络连接」中选择本机的 Clash / Mihomo YAML 配置文件。
-2. 从配置里的节点列表选择一个出口节点，然后保存。
+### 2. 把服务器配置成代理并生成 YAML
+
+VPS 开通后，先在服务商面板找到公网 IP、SSH 用户名、密码或密钥，以及 SSH 端口。这些是服务器登录信息。配置好代理服务后，才能用代理协议、端口和凭据生成 Clash / Mihomo 节点。
+
+1. 可用 [DeepSeek Harness](https://www.deepseek.com/harness/en/) 辅助配置。下载 [Claude Guardian](https://github.com/DUNHKpcc/Claude-Guardian)，把仓库里的 `skills/claude-guardian` 整个目录复制到 Harness 工作目录下的 `.dsh/skills/`，使入口位于 `.dsh/skills/claude-guardian/SKILL.md`。[Harness 技能目录说明](https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/skill/skill-filesystem/README.md#roots-and-priority)
+2. 可以这样提问：“请用 Claude Guardian 的 VPS 指南，帮我在自己的服务器上配置代理，并生成一个可导入 Claude Haven 的 `haven.yaml`。把节点直接列在顶层 `proxies` 里，凭据先用占位符，等我在本地填入。”
+3. 在本地填入实际的代理凭据并保存 YAML。SSH 密码、私钥和完整 YAML 请妥善保管，避免贴到聊天、截图或 GitHub Issue。
+
+### 3. 安装 Claude Haven 并导入配置
+
+从 [v0.1.2 Release](https://github.com/KeithMorning/ClaudeHaven/releases/tag/v0.1.2) 下载 Windows x64 安装包或 Apple Silicon Mac 的 DMG。Windows 用户运行安装器。Mac 用户打开 DMG，再将 Claude Haven 拖入「应用程序」。
+
+打开 Claude Haven，进入「系统设置 → 网络连接」，点「选择文件」导入准备好的 `.yaml` 或 `.yml`。在「出口节点」中选中要使用的节点，然后点「保存设置」。如果列表为空，检查 YAML 的顶层 `proxies` 是否列出了节点。
 
 配置文件保存在本机。启动时应用会检查网络守卫和出口；检查未通过时，虚拟桌面不会进入就绪状态。请使用包含可用代理节点的配置文件。
 
-### 3. 选择工作区
+### 4. 选择工作区
 
 进入「工作区」，选择一个本机项目文件夹并保存。虚拟桌面可以直接读写此目录中的文件；请只共享你希望它访问的文件夹。
 
-### 4. 启动桌面
+### 5. 启动桌面
 
 回到「虚拟桌面」，点击「启动虚拟环境」。Windows 首次启动时，应用会检查 WSL 2，并在缺少必要组件时引导配置。Mac 使用随应用提供的 Linux 系统，不需要安装 Lima、Docker 或另外下载系统镜像。首次启动可能需要一些时间，请保持应用打开并等待进度完成。
+
+桌面就绪后，从底部任务栏打开 **Claude Code**，按提示登录你的 Claude 账号。终端和文件管理器可以通过 `/workspace` 访问第 4 步选定的项目文件夹。
 
 ## 在桌面中工作
 
