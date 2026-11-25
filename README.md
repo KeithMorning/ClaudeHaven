@@ -22,6 +22,8 @@
 
 Claude Haven is a desktop workspace for Claude Code. It provides Claude Code, a browser, a terminal, and a file manager inside an isolated Linux desktop, with a folder on your computer as the project workspace.
 
+![Claude Haven Linux desktop](assets/screenshots/claude-haven-running.png)
+
 macOS is supported on Apple Silicon (M-series) with macOS 13 or later. It uses Apple’s Virtualization.framework to run the Linux system bundled with the app. Windows x64 runs the desktop through WSL2. Linux hosts are not currently supported.
 
 ## Get started
@@ -67,8 +69,6 @@ Once the desktop is ready, open **Claude Code** from the taskbar and follow the 
 - Access project files through the shared workspace. You can also use it to move images and other files between the host and desktop.
 - On Windows, WSL interoperability lets you invoke Windows-native commands from Linux when needed. This can reuse tools already installed on the host instead of installing a duplicate in Linux. Windows commands run as host processes, use Windows paths and permissions, and are outside the Linux network guard; Linux tools included with Claude Haven remain the ready-to-use default.
 - The app shows the network protection status. If a node or egress check fails, choose and save another node in **System Settings**, then retry from **Desktop**.
-
-![Claude Haven Linux desktop](assets/screenshots/claude-haven-running.png)
 
 ![Browser running in the Claude Haven desktop](assets/screenshots/claude-haven-browser.png)
 
