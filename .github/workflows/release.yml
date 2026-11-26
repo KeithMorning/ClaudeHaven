@@ -7,6 +7,10 @@ on:
         description: Release tag matching the versions in package.json and Tauri manifests
         required: true
         type: string
+      artifact_run_id:
+        description: Optional successful build run ID to publish existing installer artifacts without rebuilding
+        required: false
+        type: string
   push:
     tags:
       - "v*"
@@ -17,6 +21,7 @@ permissions:
 jobs:
   windows-rootfs:
     name: Build Windows Linux runtime
+    if: ${{ inputs.artifact_run_id == '' }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -32,6 +37,7 @@ jobs:
 
   windows:
     name: Build Windows installer
+    if: ${{ inputs.artifact_run_id == '' }}
     needs: windows-rootfs
     runs-on: windows-2025
     steps:
@@ -61,6 +67,7 @@ jobs:
 
   macos-runtime:
     name: Build ${{ matrix.arch }} Linux runtime
+    if: ${{ inputs.artifact_run_id == '' }}
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -103,6 +110,7 @@ jobs:
 
   macos:
     name: Build macOS ${{ matrix.arch }} DMG
+    if: ${{ inputs.artifact_run_id == '' }}
     needs: macos-runtime
     runs-on: ${{ matrix.runner }}
     strategy:
@@ -141,6 +149,7 @@ jobs:
   publish:
     name: Publish GitHub Release
     needs: [windows, macos]
+    if: ${{ always() && (inputs.artifact_run_id != '' || (needs.windows.result == 'success' && needs.macos.result == 'success')) }}
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -150,9 +159,12 @@ jobs:
           fetch-depth: 0
       - uses: actions/download-artifact@v4
         with:
-          pattern: "*-installer"
+          pattern: "*-installer*"
           path: release-assets
           merge-multiple: true
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.artifact_run_id || github.run_id }}
       - name: Resolve release tag
         id: release
         env:
