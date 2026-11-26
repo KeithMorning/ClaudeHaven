@@ -5,8 +5,8 @@ root=$(realpath "${1:?prepared guest filesystem required}")
 out=$(realpath -m "${2:?output directory required}")
 kernel=$(realpath "${3:?raw Linux kernel required}")
 case $(uname -m) in
-    aarch64) xz_filter=--arm64; squashfs_filter=arm64 ;;
-    x86_64) xz_filter=--x86; squashfs_filter=x86 ;;
+    aarch64) xz_filter=(); squashfs_filter=() ;;
+    x86_64) xz_filter=(--x86); squashfs_filter=(-Xbcj x86) ;;
     *) echo "Unsupported Linux build architecture: $(uname -m)" >&2; exit 2 ;;
 esac
 here=$(dirname "$(realpath "$0")")
@@ -33,9 +33,9 @@ while read -r type file _; do
 done < <(modprobe --show-depends overlay)
 
 (cd "$boot" && find . -print0 | "$busybox" cpio -0 -o -H newc) | gzip -9 > "$out/initrd.tmp"
-tar -C "$(dirname "$kernel")" -cf - "$(basename "$kernel")" | xz "$xz_filter" --lzma2=preset=9e > "$out/kernel.tar.xz.tmp"
+tar -C "$(dirname "$kernel")" -cf - "$(basename "$kernel")" | xz "${xz_filter[@]}" --lzma2=preset=9e > "$out/kernel.tar.xz.tmp"
 rm -f "$out/system.squashfs.tmp"
-mksquashfs "$root" "$out/system.squashfs.tmp" -noappend -comp xz -Xbcj "$squashfs_filter" -b 1M -processors 4 -no-progress
+mksquashfs "$root" "$out/system.squashfs.tmp" -noappend -comp xz "${squashfs_filter[@]}" -b 1M -processors 4 -no-progress
 for file in initrd kernel.tar.xz system.squashfs; do
     mv "$out/$file.tmp" "$out/$file"
 done
