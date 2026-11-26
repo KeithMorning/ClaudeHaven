@@ -1,0 +1,180 @@
+name: Publish Claude Haven
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag matching the versions in package.json and Tauri manifests
+        required: true
+        type: string
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  windows-rootfs:
+    name: Build Windows Linux runtime
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build x64 root filesystem
+        run: bash claude-vm/build-rootfs.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-rootfs
+          path: claude-tauri/runtime/rootfs.tar.gz
+          if-no-files-found: error
+          retention-days: 1
+
+  windows:
+    name: Build Windows installer
+    needs: windows-rootfs
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: claude-tauri/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-rootfs
+          path: claude-tauri/runtime
+      - name: Install JavaScript dependencies
+        run: npm ci
+        working-directory: claude-tauri
+      - name: Build NSIS installer
+        run: npm.cmd run build
+        working-directory: claude-tauri
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: claude-tauri/src-tauri/target/release/bundle/nsis/*-setup.exe
+          if-no-files-found: error
+          retention-days: 1
+
+  macos-runtime:
+    name: Build ${{ matrix.arch }} Linux runtime
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+            rootfs: dist/rootfs-linux-arm64.tar.gz
+            platform: linux/arm64
+          - arch: x64
+            runner: ubuntu-24.04
+            rootfs: dist/rootfs-linux-x64.tar.gz
+            platform: linux/amd64
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Install image build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y busybox kmod e2fsprogs binutils zstd python3 gzip xz-utils squashfs-tools cpio
+      - name: Build matching Linux root filesystem
+        env:
+          ROOTFS: ${{ matrix.rootfs }}
+          PLATFORM: ${{ matrix.platform }}
+        run: bash claude-vm/build-rootfs.sh "" "$ROOTFS" "$PLATFORM"
+      - name: Pack native VM image
+        env:
+          ROOTFS: ${{ matrix.rootfs }}
+        run: sudo bash claude-vm/macos/build-image.sh "$ROOTFS" claude-tauri/runtime/native
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-native-runtime-${{ matrix.arch }}
+          path: |
+            claude-tauri/runtime/native/kernel.tar.xz
+            claude-tauri/runtime/native/initrd
+            claude-tauri/runtime/native/system.squashfs
+            claude-tauri/runtime/native/image-version
+          if-no-files-found: error
+          retention-days: 1
+
+  macos:
+    name: Build macOS ${{ matrix.arch }} DMG
+    needs: macos-runtime
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-15
+          - arch: x64
+            runner: macos-15-intel
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: claude-tauri/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/download-artifact@v4
+        with:
+          name: macos-native-runtime-${{ matrix.arch }}
+          path: claude-tauri/runtime/native
+      - name: Install JavaScript dependencies
+        run: npm ci
+        working-directory: claude-tauri
+      - name: Build DMG
+        run: npm run package:macos
+        working-directory: claude-tauri
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-installer-${{ matrix.arch }}
+          path: dist/Claude-Haven-macOS-${{ matrix.arch }}-compact.dmg
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    name: Publish GitHub Release
+    needs: [windows, macos]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: "*-installer"
+          path: release-assets
+          merge-multiple: true
+      - name: Resolve release tag
+        id: release
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+          REF_NAME: ${{ github.ref_name }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          if [[ "$EVENT_NAME" == workflow_dispatch ]]; then tag="$INPUT_TAG"; else tag="$REF_NAME"; fi
+          version=$(node -p "require('./claude-tauri/package.json').version")
+          [[ "$tag" == "v$version" ]] || { echo "Tag $tag does not match app version $version" >&2; exit 1; }
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+      - name: Create or update release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+          TARGET_SHA: ${{ github.sha }}
+        run: |
+          mapfile -t assets < <(find release-assets -maxdepth 1 -type f -print | sort)
+          [[ ${#assets[@]} -eq 3 ]] || { echo "Expected Windows and two Mac installers, found ${#assets[@]}" >&2; exit 1; }
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" "${assets[@]}" --clobber
+          else
+            gh release create "$RELEASE_TAG" "${assets[@]}" \
+              --title "Claude Haven $RELEASE_TAG" --generate-notes --target "$TARGET_SHA"
+          fi

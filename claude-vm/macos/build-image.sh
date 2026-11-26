@@ -1,8 +1,20 @@
 #!/usr/bin/env bash
-# Run as root in a Linux ARM64 build VM with the kernel intended for the guest.
+# Run as root in a Linux build VM with the kernel intended for the guest.
 set -euo pipefail
-[[ $(uname -m) == aarch64 && $EUID == 0 ]]
-rootfs=$(realpath "${1:?ARM64 rootfs tar.gz required}")
+host_arch=$(uname -m)
+case "$host_arch" in
+    aarch64)
+        deb_arch=aarch64-linux-gnu
+        loader=ld-linux-aarch64.so.1
+        ;;
+    x86_64)
+        deb_arch=x86_64-linux-gnu
+        loader=ld-linux-x86-64.so.2
+        ;;
+    *) echo "Unsupported Linux build architecture: $host_arch" >&2; exit 2 ;;
+esac
+[[ $EUID == 0 ]]
+rootfs=$(realpath "${1:?matching Linux rootfs tar.gz required}")
 out=$(realpath -m "${2:?output directory required}")
 here=$(dirname "$(realpath "$0")")
 version=$(uname -r)
@@ -60,8 +72,9 @@ rm -f "$root/sbin/modprobe"
 cat > "$root/sbin/modprobe" <<'EOF'
 #!/bin/sh
 tools=/usr/local/lib/haven/tools
-exec "$tools/ld-linux-aarch64.so.1" --library-path "$tools" --argv0 modprobe "$tools/kmod" "$@"
+exec "$tools/@LOADER@" --library-path "$tools" --argv0 modprobe "$tools/kmod" "$@"
 EOF
+sed -i "s/@LOADER@/$loader/" "$root/sbin/modprobe"
 chmod 755 "$root/sbin/modprobe"
 mkdir -p "$root/lib/modules/$version"
 for mod in virtiofs virtio_blk virtio_net vmw_vsock_virtio_transport tun nf_tables nft_chain_nat iptable_filter iptable_nat ip6table_filter xt_addrtype xt_comment xt_conntrack xt_mark xt_tcpudp; do
@@ -85,13 +98,22 @@ rm -f "$root/etc/resolv.conf"
 printf 'nameserver 1.1.1.1\n' > "$root/etc/resolv.conf"
 bash "$here/trim-system.sh" "$root"
 chroot "$root" fc-cache -f
-# Ubuntu may wrap the compressed ARM64 Image in an EFI unified kernel image.
+# Ubuntu ARM64 may wrap the kernel in an EFI unified kernel image. Intel Linux
+# runners provide the bzImage expected by Apple's x86_64 Linux boot loader.
 kernel="/boot/vmlinuz-$version"
-objcopy --dump-section ".linux=$tmp/linux-section" "$kernel" "$tmp/efi-copy" 2>/dev/null || true
-if [[ -s $tmp/linux-section ]]; then kernel="$tmp/linux-section"; fi
-python3 - "$kernel" "$tmp/kernel" <<'PYK'
+if [[ $host_arch == aarch64 ]]; then
+    objcopy --dump-section ".linux=$tmp/linux-section" "$kernel" "$tmp/efi-copy" 2>/dev/null || true
+    if [[ -s $tmp/linux-section ]]; then kernel="$tmp/linux-section"; fi
+fi
+python3 - "$host_arch" "$kernel" "$tmp/kernel" <<'PYK'
 import gzip, pathlib, struct, subprocess, sys
-data = pathlib.Path(sys.argv[1]).read_bytes()
+arch, source, destination = sys.argv[1:]
+data = pathlib.Path(source).read_bytes()
+if arch == "x86_64":
+    if data[0x202:0x206] != b"HdrS":
+        raise SystemExit("Expected an x86_64 Linux bzImage kernel")
+    pathlib.Path(destination).write_bytes(data)
+    raise SystemExit(0)
 if data[4:8] == b"zimg":
     offset, length = struct.unpack_from("<II", data, 8)
     compression = data[24:32].rstrip(b"\0")
@@ -106,6 +128,6 @@ elif data.startswith(b"\x1f\x8b"):
     data = gzip.decompress(data)
 if data[56:60] != b"ARM\x64":
     raise SystemExit("Expected a raw ARM64 Linux Image")
-pathlib.Path(sys.argv[2]).write_bytes(data)
+pathlib.Path(destination).write_bytes(data)
 PYK
 bash "$here/pack-system.sh" "$root" "$out" "$tmp/kernel"

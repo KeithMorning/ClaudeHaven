@@ -415,7 +415,7 @@ function createSelect(select) {
       if (lat) {
         const badge = document.createElement('b');
         badge.className = 'select-latency' + (lat.ms == null || lat.ms > 300 ? ' slow' : '');
-        badge.textContent = lat.error || `${lat.ms} ms`;
+        badge.textContent = lat.error || latencyText(lat.ms);
         row.append(badge);
       }
       row.addEventListener('click', () => { choose(index); close(); button.focus(); });
@@ -426,7 +426,7 @@ function createSelect(select) {
     if (selectedLatency) {
       const badge = existing || document.createElement('b');
       badge.className = 'select-latency' + (selectedLatency.ms == null || selectedLatency.ms > 300 ? ' slow' : '');
-      badge.textContent = selectedLatency.error || `${selectedLatency.ms} ms`;
+      badge.textContent = selectedLatency.error || latencyText(selectedLatency.ms);
       if (!existing) button.insertBefore(badge, arrow);
     } else if (existing) {
       existing.remove();
@@ -490,7 +490,11 @@ async function showNodes(path, selected = '') {
   return select.value;
 }
 
-const latencyText = (ms) => ms == null ? '—' : `${ms} ms`;
+function latencyText(ms) {
+  if (ms == null) return '—';
+  if (ms < 1) return '<1 ms';
+  return `${Math.round(ms)} ms`;
+}
 let latencyGeneration = 0;
 async function probeLatencies() {
   const path = $('yamlPath').value;
@@ -507,7 +511,7 @@ async function probeLatencies() {
     nodes.forEach((node) => nodeLatency.set(node.name, node));
     selects.nodeSelect.sync();
     const best = nodes.filter((node) => node.ms != null).sort((a, b) => a.ms - b.ms)[0];
-    $('latencyResult').textContent = best ? `最快：${best.name} · ${best.ms} ms` : '没有可测速的节点。';
+    $('latencyResult').textContent = best ? `最快：${best.name} · ${latencyText(best.ms)}` : '没有可测速的节点。';
   } catch (error) {
     if (generation === latencyGeneration) $('latencyResult').textContent = String(error);
   } finally {
@@ -517,7 +521,7 @@ async function probeLatencies() {
 
 function updateLiveLatency(ms, name) {
   const el = $('liveLatency');
-  el.textContent = ms == null ? '' : `节点延迟 ${ms} ms`;
+  el.textContent = ms == null ? '' : `节点延迟 ${latencyText(ms)}`;
   el.title = ms == null ? '节点连接延迟暂不可用' : `节点 ${name || '出口'}的 TCP 连接延迟`;
   el.classList.toggle('slow', ms != null && ms > 300);
   el.hidden = !sessionStarted || lastGuardState !== 'guarded' || ms == null;

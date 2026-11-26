@@ -4,11 +4,11 @@
   <img src="claude-tauri/ui/assets/claude-cage.png" alt="Claude Haven logo" width="132" />
   <h1>Claude Haven</h1>
   <p><strong>Fast to launch. Small to download.</strong></p>
-  <p>Give Claude Code a focused Linux desktop workspace on Windows and Apple Silicon Mac.</p>
+  <p>Give Claude Code a focused Linux desktop workspace on Windows and Intel or Apple Silicon Mac.</p>
   <p>About 400 MB on Mac · About 600 MB on Windows</p>
   <p>
     <img src="https://img.shields.io/badge/Windows%20x64-supported-2ea44f?style=flat-square" alt="Windows x64 supported" />
-    <img src="https://img.shields.io/badge/macOS%2013%2B-Apple%20Silicon%20supported-2ea44f?style=flat-square" alt="macOS 13 and Apple Silicon supported" />
+    <img src="https://img.shields.io/badge/macOS%2013%2B-Intel%20%26%20Apple%20Silicon-2ea44f?style=flat-square" alt="macOS 13 and Intel or Apple Silicon supported" />
   </p>
   <p>
     <a href="#get-started">Get started</a> ·
@@ -24,7 +24,7 @@ Claude Haven is a desktop workspace for Claude Code. It provides Claude Code, a 
 
 ![Claude Haven Linux desktop](assets/screenshots/claude-haven-running.png)
 
-macOS is supported on Apple Silicon (M-series) with macOS 13 or later. It uses Apple’s Virtualization.framework to run the Linux system bundled with the app. Windows x64 runs the desktop through WSL2. Linux hosts are not currently supported.
+macOS is supported on Intel and Apple Silicon Macs with macOS 13 or later. Each Mac build includes a matching Linux system and uses Apple’s Virtualization.framework. Windows x64 runs the desktop through WSL2. Linux hosts are not currently supported.
 
 ## Get started
 
@@ -46,7 +46,7 @@ Once the VPS is provisioned, find its public IP, SSH username, password or key, 
 
 ### 3. Install Claude Haven and import your configuration
 
-Download the Windows x64 installer from the [v0.1.2 release](https://github.com/KeithMorning/ClaudeHaven/releases/tag/v0.1.2), or get the Apple Silicon Mac DMG from [v0.1.4](https://github.com/KeithMorning/ClaudeHaven/releases/tag/v0.1.4). On Windows, run the installer. On Mac, open the DMG and drag Claude Haven into Applications.
+Download the Windows x64 installer or the matching Intel or Apple Silicon Mac DMG from the [latest release](https://github.com/KeithMorning/ClaudeHaven/releases/latest). On Windows, run the installer. On Mac, open the DMG and drag Claude Haven into Applications.
 
 Open Claude Haven and go to **System Settings → Network**. Click **Choose file** to import your `.yaml` or `.yml` file, select the node you want to use, then click **Save settings**. If the node list is empty, check that your YAML lists nodes under the top-level `proxies` key.
 

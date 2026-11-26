@@ -81,7 +81,7 @@ fi
 # 为什么选 Pure：Base / Pro / Lite 都依赖 librime 的 Lua 插件，而 Ubuntu 22.04
 # 只有 librime 1.7.3；Pure 官方定位就是「老系统 / 旧 Rime / 无 Lua 环境」。
 # 实测在 1.7.3 上成功编译出 wanxiang_pure.table.bin（约 59MB）。
-# 词库自带 opencc/（s2t / TWVariants 等），所以 Pure 仍能打繁体，不依赖 Lua。
+# 使用系统 OpenCC 的繁转简规则统一候选文字。
 # fcitx5-rime 的用户数据目录是 ~/.local/share/fcitx5/rime（ibus-rime 是
 # ~/.config/ibus/rime）。1.0.34 起换到 fcitx5 目录；老环境（1.0.31~1.0.33 用
 # ibus 部署过万象词库）一次性把数据迁过来，避免 146MB 词库重新解压编译。
@@ -115,16 +115,65 @@ fi
 
 if [ -f "$RIME_DIR/wanxiang_pure.schema.yaml" ]; then
   SCHEMA=wanxiang_pure
-  # 在完整拼音转写之后派生声母简拼，供多音节连续输入（如 ccc）组词。
-  # 用户已有方案定制时不覆盖，避免破坏其自定义规则。
   _schema_custom="$RIME_DIR/wanxiang_pure.custom.yaml"
-  if [ ! -e "$_schema_custom" ]; then
-    cat > "$_schema_custom" <<'YAML'
+  # 只迁移 Haven 生成的补丁。精简镜像已删除词典源码，
+  # 要在构建新镜像时写入补丁，再编译词典和拼写索引。
+  _previous_patch=$(cat <<'YAML'
 patch:
   "speller/algebra/+":
     - abbrev/^([zcs]h).+$/$1/
     - abbrev/^([bpmfdtnlgkhjqxzcsryw]).+$/$1/
 YAML
+  )
+  _learning_patch=$(cat <<'YAML'
+patch:
+  "translator/enable_correction": true
+  "translator/contextual_suggestions": true
+  "speller/algebra/+":
+    # 兼容快速输入时 ng 写反，例如 shagn → shang。
+    - derive/^(zh|ch|sh)ang$/$1agn/
+    - abbrev/^([zcs]h).+$/$1/
+    - abbrev/^([bpmfdtnlgkhjqxzcsryw]).+$/$1/
+YAML
+  )
+  if [ -f "$RIME_DIR/wanxiang_pure.dict.yaml" ]; then
+    _existing_patch=
+    [ ! -f "$_schema_custom" ] || _existing_patch=$(cat "$_schema_custom")
+    if [ ! -e "$_schema_custom" ] || [ "$_existing_patch" = "$_previous_patch" ] ||
+      [ "$_existing_patch" = "$_learning_patch" ]; then
+      {
+        printf '%s\n' "$_learning_patch"
+        cat <<'YAML'
+  # 替换词库原有的简繁切换项。没有 states 的选项只负责初始化，
+  # 不出现在方案菜单里。
+  "switches/@4":
+    name: haven_simplified
+    reset: 1
+  "engine/filters":
+    - simplifier@haven_simplified
+    - simplifier@emoji
+    - uniquifier
+  haven_simplified:
+    option_name: haven_simplified
+    opencc_config: /usr/share/opencc/t2s.json
+    tips: none
+  # 万象 Pure v18.1.8 的最后两个绑定是简繁切换快捷键。
+  "key_binder/bindings/@10": null
+  "key_binder/bindings/@9": null
+YAML
+      } > "$_schema_custom"
+    fi
+  fi
+
+  # 万象的自定义短语只匹配完整编码。优先尊重用户已有的同码设置，
+  # 不修改 Rime 记录输入习惯的 userdb。
+  _phrases="$RIME_DIR/custom_phrase.txt"
+  touch "$_phrases"
+  if ! awk -F '\t' '$2 == "l" { found = 1 } END { exit !found }' "$_phrases"; then
+    printf '\n了\tl\t1\n' >> "$_phrases"
+  fi
+  if ! awk -F '\t' '$2 == "xiang" { found = 1 } END { exit !found }' "$_phrases"; then
+    printf '\n想\txiang\t3\n向\txiang\t2\n像\txiang\t1\n' >> "$_phrases"
   fi
 else
   SCHEMA=luna_pinyin

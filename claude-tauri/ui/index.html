@@ -65,7 +65,7 @@
         <div class="settings-card"><div class="settings-heading"><div><span class="section-kicker">01 / NETWORK</span><h2>网络连接</h2><p>从 Clash / Mihomo 配置中选择一个节点作为出口。</p></div><div class="card-icon warm">⌁</div></div>
           <label for="yamlPath">配置文件</label><div class="field-row"><input id="yamlPath" type="text" readonly placeholder="选择 .yaml 或 .yml 文件"><button id="chooseYaml" class="secondary-button" type="button">选择文件</button></div>
           <p class="field-help">应用使用所选节点并管理虚拟机 DNS。启动时确认网络保护和出口地区；出口 IP 不能证明实际所在地。</p>
-          <label for="nodeSelect">出口节点</label><div class="node-row"><select id="nodeSelect"><option value="">请先选择配置文件</option></select><button id="testLatency" class="secondary-button latency-button" type="button" disabled>延迟测速</button></div>
+          <label for="nodeSelect">出口节点</label><div class="node-row"><select id="nodeSelect"><option value="">请先选择配置文件</option></select><button id="testLatency" class="secondary-button latency-button" type="button" title="测量连接节点服务器端口的 TCP 耗时" disabled>延迟测速</button></div>
           <div id="latencyResult" class="latency-result" aria-live="polite"></div>
           <div class="settings-footer"><span id="networkMessage" role="status">配置仅保存在本机。</span><button id="saveNetwork" class="secondary-button" type="button">保存设置</button></div>
         </div>

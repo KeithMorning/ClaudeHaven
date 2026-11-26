@@ -26,9 +26,9 @@ npm run build
 
 程序会保留已有的 `claude-vm` WSL 发行版。关闭窗口会将应用收进系统托盘；从托盘退出才会停止环境。
 
-## macOS Apple Silicon 开发
+## macOS Intel 与 Apple Silicon 开发
 
-Mac 构建要求 Apple Silicon 和 macOS 13+，以及 Node.js 22、Rust stable 和 Xcode Command Line Tools。首次构建还要准备 ARM64 Linux 镜像。完整的工具安装、镜像构建、运行和打包步骤见 [macOS 开发工具链](macos-development.md)。
+Mac 构建要求 Intel 或 Apple Silicon 和 macOS 13+，以及 Node.js 22、Rust stable 和 Xcode Command Line Tools。首次构建还要准备与 Mac 芯片匹配的 Linux 镜像。完整的工具安装、镜像构建、运行和打包步骤见 [macOS 开发工具链](macos-development.md)。
 
 基本开发命令：
 
@@ -59,7 +59,7 @@ npm run package:macos
 bash claude-vm/build-rootfs.sh
 ```
 
-脚本默认将镜像写入 `claude-tauri/runtime/rootfs.tar.gz`，也可以传入构建上下文和输出路径。Mac 使用独立的 ARM64 镜像，生成方式见 [macOS 开发工具链](macos-development.md)。
+脚本默认将镜像写入 `claude-tauri/runtime/rootfs.tar.gz`，也可以传入构建上下文和输出路径。Mac 使用与宿主芯片匹配的独立镜像，生成方式见 [macOS 开发工具链](macos-development.md)。
 
 ## 项目目录
 
@@ -67,8 +67,10 @@ bash claude-vm/build-rootfs.sh
 | --- | --- |
 | `claude-tauri/` | Tauri 桌面程序、界面和运行时同步脚本 |
 | `claude-vm/vm/` | Linux 桌面、网络保护脚本和资源 |
-| `claude-vm/macos/` | Apple Silicon Linux 系统镜像构建脚本 |
+| `claude-vm/macos/` | Intel 和 Apple Silicon Linux 系统镜像构建脚本 |
 | `tests/` | 项目测试 |
 | `docs/` | 开发工具链和验证记录 |
 
 运行时镜像等较大的构建产物由 Git 忽略，不要提交到源码仓库。
+
+桌面端的 Windows 和 Mac 自动构建与 Release 发布步骤见[发布指南](releasing.md)。

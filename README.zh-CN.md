@@ -4,11 +4,11 @@
   <img src="claude-tauri/ui/assets/claude-cage.png" alt="Claude Haven 标志" width="132" />
   <h1>Claude Haven</h1>
   <p><strong>启动快，体积小</strong></p>
-  <p>让 Claude Code 在 Windows 和 Apple Silicon Mac 上拥有专注的 Linux 桌面工作区。</p>
+  <p>让 Claude Code 在 Windows 和 Intel 或 Apple Silicon Mac 上拥有专注的 Linux 桌面工作区。</p>
   <p>Mac 约 400 MB · Windows 约 600 MB</p>
   <p>
     <img src="https://img.shields.io/badge/Windows%20x64-supported-2ea44f?style=flat-square" alt="Windows x64 supported" />
-    <img src="https://img.shields.io/badge/macOS%2013%2B-Apple%20Silicon%20supported-2ea44f?style=flat-square" alt="macOS 13 and Apple Silicon supported" />
+    <img src="https://img.shields.io/badge/macOS%2013%2B-Intel%20%26%20Apple%20Silicon-2ea44f?style=flat-square" alt="macOS 13 and Intel or Apple Silicon supported" />
   </p>
   <p>
     <a href="#开始使用">开始使用</a> ·
@@ -24,7 +24,7 @@ Claude Haven 是一个面向 Claude Code 的桌面工作台。它在隔离的 Li
 
 ![Claude Haven 虚拟桌面运行界面](assets/screenshots/claude-haven-running.png)
 
-macOS 现已支持 Apple Silicon（M 系列芯片）和 macOS 13 及更新版本，使用 Apple Virtualization.framework 启动应用内置的 Linux 系统。Windows x64 使用 WSL2。Linux 主机版暂不支持。
+macOS 支持 Intel 和 Apple Silicon Mac，系统版本需为 macOS 13 或更新版本。每种 Mac 安装包都包含匹配架构的 Linux 系统，并使用 Apple Virtualization.framework 启动。Windows x64 使用 WSL2。Linux 主机版暂不支持。
 
 ## 开始使用
 
@@ -46,7 +46,7 @@ VPS 开通后，先在服务商面板找到公网 IP、SSH 用户名、密码或
 
 ### 3. 安装 Claude Haven 并导入配置
 
-从 [v0.1.2 Release](https://github.com/KeithMorning/ClaudeHaven/releases/tag/v0.1.2) 下载 Windows x64 安装包，或从 [v0.1.4 Release](https://github.com/KeithMorning/ClaudeHaven/releases/tag/v0.1.4) 下载 Apple Silicon Mac DMG。Windows 用户运行安装器。Mac 用户打开 DMG，再将 Claude Haven 拖入「应用程序」。
+从[最新 Release](https://github.com/KeithMorning/ClaudeHaven/releases/latest)下载 Windows x64 安装包，或按 Mac 芯片选择 Intel / Apple Silicon DMG。Windows 用户运行安装器。Mac 用户打开 DMG，再将 Claude Haven 拖入「应用程序」。
 
 打开 Claude Haven，进入「系统设置 → 网络连接」，点「选择文件」导入准备好的 `.yaml` 或 `.yml`。在「出口节点」中选中要使用的节点，然后点「保存设置」。如果列表为空，检查 YAML 的顶层 `proxies` 是否列出了节点。
 

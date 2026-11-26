@@ -1,6 +1,6 @@
 {
   "name": "claude-vm-tauri",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "private": true,
   "scripts": {
     "sync-runtime": "node scripts/sync-runtime.js",

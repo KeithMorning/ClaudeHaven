@@ -31,7 +31,7 @@ impl Drop for Session {
 static SESSION: Mutex<Option<Session>> = Mutex::new(None);
 
 pub fn available() -> bool {
-    cfg!(target_arch = "aarch64")
+    cfg!(any(target_arch = "aarch64", target_arch = "x86_64"))
 }
 
 pub(super) fn desktop_http_ready() -> io::Result<()> {

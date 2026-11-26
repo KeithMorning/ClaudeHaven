@@ -249,7 +249,7 @@ fn validate_exit_node(config: &WorkspaceConfig) -> Result<(), String> {
 #[derive(Serialize)]
 struct NodeLatency {
     name: String,
-    ms: Option<u64>,
+    ms: Option<f64>,
     error: Option<String>,
 }
 
@@ -270,7 +270,7 @@ fn node_endpoint(value: &serde_yaml::Value) -> Option<(String, u16)> {
     Some((host.to_string(), port as u16))
 }
 
-fn tcp_latency(host: &str, port: u16, attempts: u8) -> Option<u64> {
+fn tcp_latency(host: &str, port: u16, attempts: u8) -> Option<f64> {
     use std::net::ToSocketAddrs;
     let address = (host, port)
         .to_socket_addrs()
@@ -281,9 +281,10 @@ fn tcp_latency(host: &str, port: u16, attempts: u8) -> Option<u64> {
             let begin = std::time::Instant::now();
             std::net::TcpStream::connect_timeout(&address, std::time::Duration::from_millis(2500))
                 .ok()
-                .map(|_| begin.elapsed().as_millis().min(u64::MAX as u128) as u64)
+                .map(|_| begin.elapsed())
         })
         .min()
+        .map(|elapsed| elapsed.as_secs_f64() * 1000.0)
 }
 
 #[tauri::command]

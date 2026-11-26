@@ -33,7 +33,12 @@ for device in /sys/class/net/*; do
     [ "$interface" != lo ] || continue
     ip link set "$interface" up
     dhcp=/usr/local/lib/haven/tools
-    "$dhcp/ld-linux-aarch64.so.1" --library-path "$dhcp" "$dhcp/busybox" udhcpc \
+    case $(uname -m) in
+        aarch64) loader=ld-linux-aarch64.so.1 ;;
+        x86_64) loader=ld-linux-x86-64.so.2 ;;
+        *) echo "Unsupported guest architecture: $(uname -m)" >&2; exit 1 ;;
+    esac
+    "$dhcp/$loader" --library-path "$dhcp" "$dhcp/busybox" udhcpc \
         -q -n -t 4 -T 1 -i "$interface" -s /usr/local/lib/haven/dhcp.sh || true
     break
 done

@@ -25,7 +25,11 @@ rm -f "$root"/opt/google/chrome/lib{LiteRtWebGpuAccelerator,optimization_guide_i
 rm -rf "$root"/usr/share/icons/{Humanity,Humanity-Dark,ubuntu-mono-light,ubuntu-mono-dark}
 # The guest uses TigerVNC instead of a virtual GPU. Chrome ships SwiftShader.
 # Keep the GL loader libraries Xvnc links against, and drop the unused drivers.
-lib="$root/usr/lib/aarch64-linux-gnu"
+case $(uname -m) in
+    aarch64) lib="$root/usr/lib/aarch64-linux-gnu" ;;
+    x86_64) lib="$root/usr/lib/x86_64-linux-gnu" ;;
+    *) echo "Unsupported Linux build architecture: $(uname -m)" >&2; exit 2 ;;
+esac
 rm -f "$lib"/dri/*_dri.so "$lib"/libvulkan_{broadcom,freedreno,lvp,panfrost,radeon}.so \
     "$lib/libLLVM-15.so.1"
 
