@@ -7,4 +7,8 @@ export PATH="/usr/local/bin:$PATH"
 export TERM=xterm-256color
 export BROWSER=/opt/scripts/chrome-login.sh
 cd /workspace 2>/dev/null || cd ~
+# The native Mac runtime installs this link when it syncs the guest scripts.
+if [[ -x /usr/local/bin/mac && /usr/local/bin/mac -ef /opt/scripts/host-npm.py ]]; then
+  exec /usr/local/bin/mac claude
+fi
 exec claude

@@ -232,11 +232,153 @@ async function refreshStorage() {
 }
 $('refreshStorage').addEventListener('click', () => { void refreshStorage(); });
 
+let hostToolsStatus = null;
+let hostToolsBusy = false;
+let hostToolLookupTimer = null;
+let hostToolLookupGeneration = 0;
+
+function renderHostTools(status) {
+  hostToolsStatus = status;
+  $('hostToolsCard').hidden = !status;
+  if (!status) return;
+  $('toggleHostTools').textContent = status.configured ? '关闭转发' : '启用转发';
+  const editable = status.configured && status.matches && !status.legacy;
+  $('addHostTool').hidden = !editable;
+  const list = $('hostToolsList');
+  list.replaceChildren();
+  list.hidden = !status.tools.length && !status.suggested.length;
+  for (const tool of [...status.tools, ...status.suggested]) {
+    const suggested = status.suggested.includes(tool);
+    const row = document.createElement('li');
+    const details = document.createElement('div');
+    const name = document.createElement('code');
+    name.textContent = tool.name;
+    const state = document.createElement('span');
+    state.textContent = suggested ? '可添加' : !status.configured ? '待授权'
+      : !status.matches ? '其他工作区' : tool.enabled ? '已启用' : '已禁用';
+    const path = document.createElement('small');
+    path.textContent = tool.path;
+    details.append(name, state, path);
+    row.append(details);
+    if (editable) {
+      const actions = document.createElement('div');
+      actions.className = 'host-tool-actions';
+      const menu = suggested ? [['add', '添加']]
+        : [[tool.enabled ? 'disable' : 'enable', tool.enabled ? '禁用' : '启用'], ['remove', '移除']];
+      for (const [action, label] of menu) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'secondary-button';
+        button.textContent = label;
+        button.setAttribute('aria-label', `${label} ${tool.name}`);
+        button.addEventListener('click', () => {
+          void updateHostTools('edit_host_tool', { action, name: tool.name, path: suggested ? tool.path : null });
+        });
+        actions.append(button);
+      }
+      row.append(actions);
+    }
+    list.append(row);
+  }
+  if (!status.configured) {
+    $('hostToolsMessage').textContent = status.workspace
+      ? '确认后启用检测到的工具，也可自行添加。' : '请先在「工作区」中选择并保存文件夹。';
+  } else if (!status.matches) {
+    $('hostToolsMessage').textContent = '请关闭旧工作区授权，再为当前工作区启用。';
+  } else if (status.legacy) {
+    $('hostToolsMessage').textContent = '正在使用旧版有限授权。关闭后重新启用即可管理工具列表。';
+  } else {
+    $('hostToolsMessage').textContent = '重新打开虚拟桌面里的 Claude Code 即可加载最新工具名单。也可在 /workspace 里用 mac <命令> 调用。';
+  }
+}
+
+async function updateHostTools(command = 'host_tools_status', args = {}) {
+  if (hostToolsBusy) return false;
+  hostToolsBusy = true;
+  const controls = () => $('hostToolsCard').querySelectorAll('button, input');
+  controls().forEach((control) => { control.disabled = true; });
+  try {
+    const status = await invoke(command, args);
+    renderHostTools(status);
+    return true;
+  } catch (error) {
+    if (hostToolsStatus || latestRuntimePlatform === 'macos') {
+      $('hostToolsCard').hidden = false;
+      $('hostToolsMessage').textContent = String(error);
+    }
+  } finally {
+    controls().forEach((control) => { control.disabled = false; });
+    $('toggleHostTools').disabled = !hostToolsStatus || (!hostToolsStatus.configured && !hostToolsStatus.workspace);
+    hostToolsBusy = false;
+    refreshHostToolSubmit();
+  }
+}
+$('toggleHostTools').addEventListener('click', () => {
+  void updateHostTools('set_host_tools', { enabled: !hostToolsStatus.configured });
+});
+function refreshHostToolSubmit() {
+  $('submitHostTool').disabled = hostToolsBusy || $('hostToolPathRow').hidden || !$('hostToolPath').value.trim();
+}
+
+function lookupHostTool() {
+  const name = $('hostToolName').value.trim();
+  const path = $('hostToolPath');
+  const row = $('hostToolPathRow');
+  const picker = $('pickHostTool');
+  const message = $('hostToolLookupMessage');
+  const generation = ++hostToolLookupGeneration;
+  clearTimeout(hostToolLookupTimer);
+  path.value = '';
+  row.hidden = true;
+  message.textContent = '';
+  refreshHostToolSubmit();
+  if (!name) return;
+  if (hostToolsStatus?.tools.some((tool) => tool.name === name)) {
+    message.textContent = '工具列表中已有此命令。';
+    return;
+  }
+  hostToolLookupTimer = setTimeout(async () => {
+    try {
+      const detected = await invoke('find_host_tool', { name });
+      if (generation !== hostToolLookupGeneration) return;
+      path.value = detected ?? '';
+      path.readOnly = Boolean(detected);
+      picker.hidden = Boolean(detected);
+      row.hidden = false;
+      message.textContent = detected ? '已找到 Mac 上的可执行文件。' : '未找到命令，请输入绝对路径或选择文件。';
+      refreshHostToolSubmit();
+    } catch (error) {
+      if (generation === hostToolLookupGeneration) message.textContent = String(error);
+    }
+  }, 200);
+}
+
+async function addHostTool(path) {
+  const input = $('hostToolName');
+  const name = input.value.trim();
+  if (await updateHostTools('edit_host_tool', { action: 'add', name, path })
+      && hostToolsStatus.tools.some((tool) => tool.name === name)) {
+    input.value = '';
+    lookupHostTool();
+  }
+}
+
+$('hostToolName').addEventListener('input', lookupHostTool);
+$('hostToolPath').addEventListener('input', refreshHostToolSubmit);
+$('pickHostTool').addEventListener('click', () => { void addHostTool(null); });
+$('addHostTool').addEventListener('submit', (event) => {
+  event.preventDefault();
+  if (!$('submitHostTool').disabled) void addHostTool($('hostToolPath').value.trim());
+});
+
 function switchPage(page) {
   document.querySelectorAll('[data-page]').forEach((el) => el.classList.toggle('active', el.dataset.page === page));
   document.querySelectorAll('[data-view]').forEach((el) => { el.hidden = el.dataset.view !== page; });
   $('pageTitle').textContent = ({ home: '虚拟桌面', files: '工作区', system: '系统设置' })[page] || 'Claude Haven';
-  if (page === 'system') void refreshStorage();
+  if (page === 'system') {
+    void refreshStorage();
+    void updateHostTools();
+  }
 }
 document.querySelectorAll('[data-page]').forEach((el) => el.addEventListener('click', () => switchPage(el.dataset.page)));
 

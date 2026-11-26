@@ -13,14 +13,16 @@ import sys
 import tempfile
 
 
-def request_host(message, stdout=None):
+def request_host(message, stdout=None, stderr=None, timeout=None):
     if stdout is None:
         stdout = sys.stdout.buffer
+    if stderr is None:
+        stderr = sys.stderr.buffer
     with socket.socket(socket.AF_VSOCK, socket.SOCK_STREAM) as connection:
-        connection.settimeout(5)
+        connection.settimeout(5 if timeout is None else timeout)
         connection.connect((socket.VMADDR_CID_HOST, 6082))
         connection.sendall(json.dumps(message).encode() + b"\n")
-        connection.settimeout(None)
+        connection.settimeout(timeout)
         with connection.makefile("rb") as reply:
             while True:
                 header = reply.read(5)
@@ -34,7 +36,7 @@ def request_host(message, stdout=None):
                     raise ValueError("读取宿主响应时连接断开。")
                 if kind == 3:
                     return int(payload)
-                output = {1: stdout, 2: sys.stderr.buffer}.get(kind)
+                output = {1: stdout, 2: stderr}.get(kind)
                 if output is None:
                     raise ValueError("无效的宿主响应类型。")
                 output.write(payload)
@@ -52,12 +54,23 @@ def run_tool(tool, arguments):
     })
 
 
-def launch_claude(arguments):
+def claude_host_grant():
     reply = io.BytesIO()
-    status = request_host({"operation": "list"}, reply)
-    if status != 0:
-        return status
-    grant = json.loads(reply.getvalue())
+    try:
+        status = request_host({"operation": "list"}, reply, io.BytesIO(), timeout=2)
+        if status == 0:
+            return json.loads(reply.getvalue())
+    except (OSError, ValueError):
+        pass
+    return None
+
+
+def launch_claude(arguments):
+    grant = claude_host_grant()
+    command = ["claude", *arguments]
+    if not grant or not grant["tools"]:
+        os.execvp(command[0], command)
+
     client = Path(__file__).resolve()
     with tempfile.TemporaryDirectory(prefix="haven-host-tools-") as directory:
         for tool in grant["tools"]:
@@ -66,7 +79,7 @@ def launch_claude(arguments):
         environment = dict(os.environ)
         environment["PATH"] = directory + ":" + environment.get("PATH", os.defpath)
         environment["HAVEN_HOST_TOOLS_LEGACY"] = "1" if grant["legacy"] else "0"
-        return subprocess.call(["claude", *arguments], env=environment)
+        return subprocess.call(command, env=environment)
 
 
 def main():

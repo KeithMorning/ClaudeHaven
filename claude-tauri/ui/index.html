@@ -88,6 +88,26 @@
           <p class="field-help" id="storagePolicy" hidden></p>
           <div class="settings-footer"><span id="storageMessage" role="status"></span><button id="refreshStorage" class="secondary-button" type="button">刷新</button></div>
         </section>
+        <section class="settings-card" id="hostToolsCard" aria-labelledby="hostToolsTitle" hidden>
+          <div class="settings-heading"><div><h2 id="hostToolsTitle">Mac 工具转发</h2><p>默认检测已安装的 node、npm 和 python3。</p></div></div>
+          <ul id="hostToolsList" class="host-tools-list" aria-label="Mac 工具列表" hidden></ul>
+          <form id="addHostTool" hidden>
+            <label for="hostToolName">命令名</label>
+            <div class="field-row">
+              <input id="hostToolName" type="text" placeholder="例如 git" maxlength="64" required>
+              <button id="submitHostTool" class="secondary-button" type="submit" disabled>添加</button>
+            </div>
+            <div id="hostToolPathRow" hidden>
+              <label for="hostToolPath">可执行文件路径</label>
+              <div class="field-row">
+                <input id="hostToolPath" type="text" placeholder="/绝对路径/命令">
+                <button id="pickHostTool" class="secondary-button" type="button" hidden>选择文件</button>
+              </div>
+            </div>
+            <p id="hostToolLookupMessage" class="field-help" role="status"></p>
+          </form>
+          <div class="settings-footer"><span id="hostToolsMessage" role="status"></span><button id="toggleHostTools" class="secondary-button" type="button" disabled>启用</button></div>
+        </section>
         <section class="settings-card reset-card" aria-labelledby="resetTitle">
           <div class="settings-heading"><div><span class="section-kicker">02 / ENVIRONMENT</span><h2 id="resetTitle">重置系统</h2><p>删除当前 Linux 虚拟环境，之后可重新启动一个干净环境。</p></div><div class="card-icon reset-icon" aria-hidden="true">↺</div></div>
           <div class="reset-warning"><strong>此操作会删除虚拟环境中的所有数据</strong><p>包括 Claude 登录状态、虚拟环境内的文件和已安装内容。宿主共享工作区及本应用保存的网络配置会保留。</p></div>

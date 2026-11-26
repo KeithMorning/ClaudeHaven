@@ -3,6 +3,8 @@
 mod bootstrap;
 mod runtime;
 mod storage;
+#[cfg(target_os = "macos")]
+mod host_tools;
 
 use serde::{Deserialize, Serialize};
 use std::path::Path;
@@ -741,6 +743,73 @@ async fn storage_status(app: tauri::AppHandle) -> Result<Option<storage::Storage
         .map_err(|e| e.to_string())?
 }
 
+#[tauri::command]
+fn host_tools_status(app: tauri::AppHandle) -> Result<Option<HostToolsStatus>, String> {
+    #[cfg(target_os = "macos")]
+    return host_tools::status(&app).map(Some);
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = app;
+        Ok(None)
+    }
+}
+
+#[derive(Serialize)]
+struct HostToolsStatus {
+    configured: bool,
+    workspace: String,
+    matches: bool,
+    legacy: bool,
+    tools: Vec<HostTool>,
+    suggested: Vec<HostTool>,
+}
+
+#[derive(Serialize)]
+struct HostTool {
+    name: String,
+    path: String,
+    enabled: bool,
+}
+
+#[tauri::command]
+async fn find_host_tool(app: tauri::AppHandle, name: String) -> Result<Option<std::path::PathBuf>, String> {
+    #[cfg(target_os = "macos")]
+    return tauri::async_runtime::spawn_blocking(move || host_tools::find(&app, &name))
+        .await
+        .map_err(|e| e.to_string())?;
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (app, name);
+        Ok(None)
+    }
+}
+
+#[tauri::command]
+async fn edit_host_tool(app: tauri::AppHandle, action: String, name: String, path: Option<std::path::PathBuf>) -> Result<HostToolsStatus, String> {
+    #[cfg(target_os = "macos")]
+    return tauri::async_runtime::spawn_blocking(move || host_tools::edit(&app, &action, &name, path))
+        .await
+        .map_err(|e| e.to_string())?;
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (app, action, name, path);
+        Err("宿主工具设置仅适用于 Mac。".into())
+    }
+}
+
+#[tauri::command]
+async fn set_host_tools(app: tauri::AppHandle, enabled: bool) -> Result<HostToolsStatus, String> {
+    #[cfg(target_os = "macos")]
+    return tauri::async_runtime::spawn_blocking(move || host_tools::configure(&app, enabled))
+        .await
+        .map_err(|e| e.to_string())?;
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (app, enabled);
+        Err("宿主工具设置仅适用于 Mac。".into())
+    }
+}
+
 #[cfg(windows)]
 fn wsl_ready_marker(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
     app.path().app_data_dir().ok().map(|p| p.join("bootstrap").join("runtime-verified-v1"))
@@ -911,6 +980,10 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             runtime_status,
             storage_status,
+            host_tools_status,
+            set_host_tools,
+            edit_host_tool,
+            find_host_tool,
             bootstrap_status,
             bootstrap_snapshot,
             bootstrap_start,

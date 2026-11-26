@@ -54,7 +54,7 @@ final class HostNpm: NSObject, VZVirtioSocketListenerDelegate {
     private func grant() throws -> Grant {
         let path = dataDirectory.appendingPathComponent("host-npm.json").path
         let fd = open(path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC)
-        guard fd >= 0 else { throw LaunchError("Mac 宿主 npm 未开启。请在 Mac 上配置 host-npm.json。") }
+        guard fd >= 0 else { throw LaunchError("Mac 工具转发未开启。请在 Mac 应用的「系统设置 → Mac 工具转发」中启用。") }
         let file = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
         var info = stat()
         guard fstat(fd, &info) == 0, (info.st_mode & S_IFMT) == S_IFREG,
@@ -67,7 +67,7 @@ final class HostNpm: NSObject, VZVirtioSocketListenerDelegate {
         let grant = try JSONDecoder().decode(Grant.self, from: data)
         guard grant.workspace.hasPrefix("/"),
               URL(fileURLWithPath: grant.workspace).resolvingSymlinksInPath().path == workspace.path else {
-            throw LaunchError("当前工作区未获准使用 Mac 宿主 npm。")
+            throw LaunchError("当前工作区未获授权。请在 Mac 应用的「系统设置 → Mac 工具转发」中关闭旧授权，再为当前工作区启用。")
         }
         return grant
     }

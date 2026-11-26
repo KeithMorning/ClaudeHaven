@@ -46,7 +46,7 @@ Once the VPS is provisioned, find its public IP, SSH username, password or key, 
 
 ### 3. Install Claude Haven and import your configuration
 
-Download the Windows x64 installer from the [v0.1.2 release](https://github.com/KeithMorning/ClaudeHaven/releases/tag/v0.1.2), or get the Apple Silicon Mac DMG from [v0.1.3](https://github.com/KeithMorning/ClaudeHaven/releases/tag/v0.1.3). On Windows, run the installer. On Mac, open the DMG and drag Claude Haven into Applications.
+Download the Windows x64 installer from the [v0.1.2 release](https://github.com/KeithMorning/ClaudeHaven/releases/tag/v0.1.2), or get the Apple Silicon Mac DMG from [v0.1.4](https://github.com/KeithMorning/ClaudeHaven/releases/tag/v0.1.4). On Windows, run the installer. On Mac, open the DMG and drag Claude Haven into Applications.
 
 Open Claude Haven and go to **System Settings → Network**. Click **Choose file** to import your `.yaml` or `.yml` file, select the node you want to use, then click **Save settings**. If the node list is empty, check that your YAML lists nodes under the top-level `proxies` key.
 
