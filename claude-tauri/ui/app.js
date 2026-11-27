@@ -3,6 +3,8 @@
 const $ = (id) => document.getElementById(id);
 const invoke = (name, args) => window.__TAURI__.core.invoke(name, args);
 let config = { yaml_path: '', node: '', workspace: '', timezone: '', language: 'en-US' };
+let loadedConfig = config;
+let activeRuntimeConfig = null;
 let checkGeneration = 0;
 let sessionStarted = false;
 let autoStartDone = false;
@@ -380,7 +382,10 @@ function switchPage(page) {
     void updateHostTools();
   }
 }
-document.querySelectorAll('[data-page]').forEach((el) => el.addEventListener('click', () => switchPage(el.dataset.page)));
+document.querySelectorAll('[data-page]').forEach((el) => el.addEventListener('click', async () => {
+  if (autoSettingOperation && !await autoSettingOperation) return;
+  switchPage(el.dataset.page);
+}));
 
 function createSelect(select) {
   const wrapper = document.createElement('div'); wrapper.className = 'select-wrap';
@@ -481,7 +486,11 @@ for (const zone of Intl.supportedValuesOf('timeZone')) {
 async function showNodes(path, selected = '') {
   const select = $('nodeSelect');
   const names = await invoke('inspect_config', { path });
+  if (!names.length) throw new Error('配置文件中没有可用节点。');
+  latencyGeneration++;
   nodeLatency.clear();
+  $('latencyResult').textContent = '';
+  $('testLatency').textContent = '延迟测速';
   select.replaceChildren();
   names.forEach((name) => { const option = document.createElement('option'); option.value = name; option.textContent = name; select.append(option); });
   select.value = names.includes(selected) ? selected : (names[0] || '');
@@ -529,12 +538,13 @@ function updateLiveLatency(ms, name) {
 
 let liveLatencyBusy = false;
 async function pollLiveLatency() {
-  if (liveLatencyBusy || !sessionStarted || !config.yaml_path || !config.node) return;
+  const runningConfig = activeRuntimeConfig;
+  if (liveLatencyBusy || !sessionStarted || !runningConfig?.yaml_path || !runningConfig.node) return;
   liveLatencyBusy = true;
-  const { yaml_path, node } = config;
+  const { yaml_path, node } = runningConfig;
   const generation = statusGeneration;
   const isCurrent = () => sessionStarted && generation === statusGeneration
-    && yaml_path === config.yaml_path && node === config.node;
+    && runningConfig === activeRuntimeConfig;
   try {
     const ms = await invoke('node_latency', { path: yaml_path, node });
     if (isCurrent()) updateLiveLatency(Array.isArray(ms) ? ms.find((item) => item.name === node)?.ms : null, node);
@@ -543,55 +553,118 @@ async function pollLiveLatency() {
 }
 setInterval(pollLiveLatency, 8000);
 
-async function save(message, nextConfig = config) {
-  try {
+let settingsWrite = Promise.resolve();
+const restartSettings = {
+  networkMessage: ['yaml_path', 'node'],
+  workspaceMessage: ['workspace'],
+  environmentMessage: ['language', 'timezone'],
+};
+
+function renderPendingSettings() {
+  let pending = false;
+  for (const [message, keys] of Object.entries(restartSettings)) {
+    const requiresRestart = activeRuntimeConfig && keys.some((key) => config[key] !== activeRuntimeConfig[key]);
+    pending ||= Boolean(requiresRestart);
+    const status = $(message);
+    if (status.dataset.state === 'saved' || status.dataset.state === 'pending-restart') {
+      status.dataset.state = requiresRestart ? 'pending-restart' : 'saved';
+      status.textContent = requiresRestart ? '已保存。停止并重新启动虚拟环境后生效。'
+        : sessionStarted ? '已保存。' : '已保存，下次启动虚拟环境时生效。';
+    }
+  }
+  $('pendingSettings').textContent = pending ? '有已保存的设置将在重启虚拟环境后生效' : '';
+}
+
+async function save(message, changes) {
+  const write = settingsWrite.then(async () => {
+    const nextConfig = { ...config, ...changes };
     await invoke('save_config', { config: nextConfig });
     config = nextConfig;
+  });
+  settingsWrite = write.catch(() => {});
+  try {
+    await write;
     if (message === 'networkMessage') {
       const repairingNode = Boolean(nodeConfigIssue);
       nodeConfigIssue = '';
-      if (repairingNode && !sessionStarted) {
-        autoStartDone = false;
-        switchPage('home');
-      }
+      if (!activeRuntimeConfig) invalidateCheck();
+      if (repairingNode && !sessionStarted) autoStartDone = false;
     }
-    $(message).textContent = message === 'environmentMessage'
-      ? '设置已保存，重启虚拟环境后生效。'
-      : '设置已保存。';
+    $(message).dataset.state = 'saved';
+    renderPendingSettings();
     if (!sessionStarted) void refreshStatus();
+    return true;
+  } catch (error) {
+    $(message).dataset.state = 'error';
+    $(message).textContent = `保存失败：${error}`;
+    return false;
   }
-  catch (error) { $(message).textContent = String(error); }
 }
 
-$('chooseYaml').addEventListener('click', async () => {
-  try {
+let autoSettingOperation = null;
+function editAutoSetting(message, retry, chooseChanges) {
+  if (autoSettingOperation) return;
+  const network = message === 'networkMessage';
+  const status = $(message);
+  const picker = $(network ? 'chooseYaml' : 'chooseWorkspace');
+  picker.disabled = true;
+  $(retry).disabled = true;
+  if (network) {
+    $('nodeSelect').disabled = true;
+    selects.nodeSelect.sync();
+  }
+  autoSettingOperation = (async () => {
+    let changes;
+    try {
+      changes = await chooseChanges();
+    } catch (error) {
+      status.dataset.state = 'error';
+      status.textContent = String(error);
+      return false;
+    }
+    if (!changes) return true;
+    status.dataset.state = 'saving';
+    status.textContent = '正在保存…';
+    const saved = await save(message, changes);
+    $(retry).hidden = saved;
+    return saved;
+  })().finally(() => {
+    autoSettingOperation = null;
+    picker.disabled = false;
+    $(retry).disabled = false;
+    if (network) {
+      $('nodeSelect').disabled = false;
+      selects.nodeSelect.sync();
+    }
+  });
+}
+
+const networkChanges = () => ({ yaml_path: $('yamlPath').value, node: $('nodeSelect').value });
+$('chooseYaml').addEventListener('click', () => {
+  editAutoSetting('networkMessage', 'retryNetwork', async () => {
     const path = await invoke('choose_config');
     if (!path) return;
-    await showNodes(path, path === config.yaml_path ? config.node : '');
-    invalidateCheck();
+    const selected = path === $('yamlPath').value ? $('nodeSelect').value : '';
+    await showNodes(path, selected);
     $('yamlPath').value = path;
-    $('networkMessage').textContent = '已选择第一个节点，可更换节点后保存设置。';
-  } catch (error) { $('networkMessage').textContent = String(error); }
+    return networkChanges();
+  });
 });
-$('nodeSelect').addEventListener('change', invalidateCheck);
+$('nodeSelect').addEventListener('change', () => editAutoSetting('networkMessage', 'retryNetwork', networkChanges));
 $('testLatency').addEventListener('click', () => { void probeLatencies(); });
-$('saveNetwork').addEventListener('click', () => {
-  const yaml_path = $('yamlPath').value;
-  const node = $('nodeSelect').value;
-  if (!yaml_path || !node) {
-    $('networkMessage').textContent = '请选择配置文件和出口节点，再保存设置。';
-    return;
-  }
-  void save('networkMessage', { ...config, yaml_path, node });
+$('retryNetwork').addEventListener('click', () => editAutoSetting('networkMessage', 'retryNetwork', networkChanges));
+const workspaceChanges = () => ({ workspace: $('workspacePath').value });
+$('chooseWorkspace').addEventListener('click', () => {
+  editAutoSetting('workspaceMessage', 'retryWorkspace', async () => {
+    const path = await invoke('choose_workspace');
+    if (!path) return;
+    $('workspacePath').value = path;
+    return workspaceChanges();
+  });
 });
-$('chooseWorkspace').addEventListener('click', async () => {
-  try { const path = await invoke('choose_workspace'); if (path) { config.workspace = path; $('workspacePath').value = path; } }
-  catch (error) { $('workspaceMessage').textContent = String(error); }
-});
-$('saveWorkspace').addEventListener('click', () => { void save('workspaceMessage'); });
+$('retryWorkspace').addEventListener('click', () => editAutoSetting('workspaceMessage', 'retryWorkspace', workspaceChanges));
 $('saveEnvironment').addEventListener('click', () => {
   void save('environmentMessage', {
-    ...config,
     timezone: $('timezone').value,
     language: $('environmentLanguage').value,
   });
@@ -670,7 +743,7 @@ $('checkNetwork').addEventListener('click', runNetworkCheck);
 
 async function loadConfig() {
   try {
-    config = await invoke('load_config');
+    loadedConfig = config = await invoke('load_config');
     $('yamlPath').value = config.yaml_path;
     $('workspacePath').value = config.workspace;
     if (config.timezone && !Array.from($('timezone').options).some(option => option.value === config.timezone)) {
@@ -682,26 +755,25 @@ async function loadConfig() {
     selects.environmentLanguage.sync();
     if (config.yaml_path) {
       const selected = await showNodes(config.yaml_path, config.node);
-      if (!selected) {
-        throw new Error('配置文件中没有可用节点。');
-      } else {
-        if (selected !== config.node) {
-          const nextConfig = { ...config, node: selected };
-          await invoke('save_config', { config: nextConfig });
-          config = nextConfig;
-          $('networkMessage').textContent = '原节点不可用，已选择并保存列表中的第一个节点。';
-        }
-        void probeLatencies();
+      if (selected !== config.node) {
+        const nextConfig = { ...config, node: selected };
+        await invoke('save_config', { config: nextConfig });
+        config = nextConfig;
+        $('networkMessage').dataset.state = 'saved';
+        $('networkMessage').textContent = '原节点不可用，已选择并保存列表中的第一个节点。';
       }
+      void probeLatencies();
     }
   } catch (error) {
     nodeConfigIssue = String(error);
+    $('networkMessage').dataset.state = 'error';
     $('networkMessage').textContent = nodeConfigIssue;
   }
 }
 
 function connectDesktop() {
   sessionStarted = true;
+  renderPendingSettings();
   resetClipboard();
   if ($('desktopFrame').getAttribute('src') !== 'http://127.0.0.1:6080/desktop.html?autoconnect=1') {
     $('desktopFrame').src = 'http://127.0.0.1:6080/desktop.html?autoconnect=1';
@@ -778,9 +850,13 @@ async function startSession() {
         $('startupDetail').textContent = '正在确认代理出口和断网保护';
       }
     });
+    await settingsWrite;
+    activeRuntimeConfig = config;
     const outcome = await invoke('start_runtime');
     if (!outcome.ok) {
       $('stopRuntime').hidden = !outcome.needs_stop;
+      if (!outcome.needs_stop) activeRuntimeConfig = null;
+      renderPendingSettings();
       throw new Error(outcome.error || '启动未完成。');
     }
     connectDesktop();
@@ -817,12 +893,17 @@ async function refreshStatus(manual = false) {
   try {
     const status = await invoke('runtime_status');
     const boot = await invoke('bootstrap_snapshot');
+    await settingsWrite;
     latestRuntimePlatform = status.platform;
     const isMac = status.platform === 'macos';
     const backendName = isMac ? 'Apple 虚拟化' : 'WSL';
     latestHostProbe = status.host_probe || null;
     renderBootstrap(boot, latestHostProbe);
     if (generation !== statusGeneration || runtimeInFlight) return;
+    if (!sessionStarted) {
+      activeRuntimeConfig = status.session_running ? activeRuntimeConfig ?? loadedConfig : null;
+      renderPendingSettings();
+    }
     manual = manualStartRequested;
     manualStartRequested = false;
     $('topDot').classList.toggle('available', status.wsl_available);
@@ -916,6 +997,8 @@ $('stopRuntime').addEventListener('click', async () => {
   try {
     await invoke('stop_runtime');
     sessionStarted = false;
+    activeRuntimeConfig = null;
+    renderPendingSettings();
     autoStartDone = true;
     resetClipboard();
     lastGuardState = '';
@@ -1082,6 +1165,8 @@ $('confirmReset').addEventListener('click', async () => {
   try {
     await invoke('reset_system', { confirmation: 'RESET_CLAUDE_ENVIRONMENT' });
     sessionStarted = false;
+    activeRuntimeConfig = null;
+    renderPendingSettings();
     stoppedByUser = true;
     autoStartDone = true;
     statusGeneration++;
@@ -1109,4 +1194,11 @@ $('confirmReset').addEventListener('click', async () => {
     $('cancelReset').disabled = false;
   }
 });
-void loadConfig().then(() => refreshStatus());
+void loadConfig().then(() => {
+  $('chooseYaml').disabled = false;
+  $('chooseWorkspace').disabled = false;
+  $('saveEnvironment').disabled = false;
+  $('nodeSelect').disabled = false;
+  selects.nodeSelect.sync();
+  return refreshStatus();
+});

@@ -20,7 +20,7 @@
       <div class="rail-bottom"><span class="rail-pulse"></span><strong>本地工作环境</strong></div>
     </aside>
     <main>
-      <header class="topbar"><div class="crumb"><strong id="pageTitle">虚拟桌面</strong><span class="crumb-subtitle">CLAUDE HAVEN</span></div><div class="top-right"><span class="status-dot" id="topDot"></span><span id="topStatus">正在检查</span><button id="powerRuntime" class="power-button" type="button" aria-label="启动环境" title="启动环境">⏻</button><button id="stopRuntime" type="button" hidden>停止</button><button id="refresh" type="button" hidden>刷新</button></div></header>
+      <header class="topbar"><div class="crumb"><strong id="pageTitle">虚拟桌面</strong><span class="crumb-subtitle">CLAUDE HAVEN</span></div><div class="top-right"><span id="pendingSettings" class="pending-settings" role="status"></span><span class="status-dot" id="topDot"></span><span id="topStatus">正在检查</span><button id="powerRuntime" class="power-button" type="button" aria-label="启动环境" title="启动环境">⏻</button><button id="stopRuntime" type="button" hidden>停止</button><button id="refresh" type="button" hidden>刷新</button></div></header>
       <section class="content" data-view="home">
         <section class="workspace" aria-label="虚拟桌面">
           <div class="workspace-stage"><div class="stage-grid"></div><div class="stage-content" id="stageContent"><div class="stage-symbol"><span>›</span><i>_</i></div><div class="stage-label">YOUR WORKSPACE, READY WHEN YOU ARE</div><h2 id="stageTitle">正在检查运行环境</h2><p id="stageDescription">检查系统运行环境和本地虚拟桌面状态。</p><button class="primary-button" id="startRuntime" type="button" disabled>启动虚拟环境 <span>↗</span></button><div class="bootstrap-actions"><button class="secondary-button install-button" id="installWsl" type="button" hidden>配置 WSL 2</button><button class="text-button" id="selectWslMsi" type="button" hidden>选择本地安装包</button><button class="text-button" id="cancelBootstrap" type="button" hidden>取消下载</button></div><div class="bootstrap-progress" id="bootstrapProgress" hidden><div class="bootstrap-progress-track"><span id="bootstrapProgressBar"></span></div><div class="bootstrap-progress-meta"><span id="bootstrapProgressText"></span><span id="bootstrapProgressSpeed"></span></div></div><div class="stage-note" id="installNote">请先完成网络与工作区设置。</div><details class="bootstrap-diagnostics" id="bootstrapDiagnostics" hidden><summary>查看诊断信息</summary><p>复制前请检查信息；本机日志路径可能包含用户名或本地路径。</p><pre id="bootstrapDiagnosticText"></pre><button class="text-button" id="copyBootstrapDiagnostic" type="button">复制诊断信息</button></details></div><iframe id="desktopFrame" title="虚拟桌面" sandbox="allow-scripts allow-same-origin" hidden></iframe><div class="startup-overlay" id="startupOverlay" role="status" aria-live="polite" hidden>
@@ -63,11 +63,11 @@
         <div class="settings-inner">
         <div class="heading"><div><div class="eyebrow"><span></span> SYSTEM</div><h1>系统设置<span class="heading-period">.</span></h1><p>管理网络连接和虚拟环境。</p></div></div>
         <div class="settings-card"><div class="settings-heading"><div><span class="section-kicker">01 / NETWORK</span><h2>网络连接</h2><p>从 Clash / Mihomo 配置中选择一个节点作为出口。</p></div><div class="card-icon warm">⌁</div></div>
-          <label for="yamlPath">配置文件</label><div class="field-row"><input id="yamlPath" type="text" readonly placeholder="选择 .yaml 或 .yml 文件"><button id="chooseYaml" class="secondary-button" type="button">选择文件</button></div>
+          <label for="yamlPath">配置文件</label><div class="field-row"><input id="yamlPath" type="text" readonly placeholder="选择 .yaml 或 .yml 文件"><button id="chooseYaml" class="secondary-button" type="button" disabled>选择文件</button></div>
           <p class="field-help">应用使用所选节点并管理虚拟机 DNS。启动时确认网络保护和出口地区；出口 IP 不能证明实际所在地。</p>
-          <label for="nodeSelect">出口节点</label><div class="node-row"><select id="nodeSelect"><option value="">请先选择配置文件</option></select><button id="testLatency" class="secondary-button latency-button" type="button" title="测量连接节点服务器端口的 TCP 耗时" disabled>延迟测速</button></div>
+          <label for="nodeSelect">出口节点</label><div class="node-row"><select id="nodeSelect" disabled><option value="">请先选择配置文件</option></select><button id="testLatency" class="secondary-button latency-button" type="button" title="测量连接节点服务器端口的 TCP 耗时" disabled>延迟测速</button></div>
           <div id="latencyResult" class="latency-result" aria-live="polite"></div>
-          <div class="settings-footer"><span id="networkMessage" role="status">配置仅保存在本机。</span><button id="saveNetwork" class="secondary-button" type="button">保存设置</button></div>
+          <div class="auto-save-status"><span id="networkMessage" role="status">配置文件与出口节点选定后自动保存到本机。</span><button id="retryNetwork" class="secondary-button" type="button" hidden>重试保存</button></div>
         </div>
         <section class="settings-card environment-card" aria-labelledby="environmentTitle">
           <div class="settings-heading"><div><h2 id="environmentTitle">虚拟环境语言与时区</h2><p>保存后，停止并重新启动虚拟环境即可生效。</p></div></div>
@@ -76,7 +76,7 @@
           <label for="timezone">时区</label>
           <select id="timezone"><option value="">首次根据代理出口自动设置</option><option value="UTC">UTC</option></select>
           <p class="field-help" id="timezoneDetails" role="status"></p>
-          <div class="settings-footer"><span id="environmentMessage" role="status"></span><button id="saveEnvironment" class="secondary-button" type="button">保存设置</button></div>
+          <div class="settings-footer"><span id="environmentMessage" role="status"></span><button id="saveEnvironment" class="secondary-button" type="button" disabled>保存设置</button></div>
         </section>
         <section class="settings-card storage-card" id="storageCard" aria-labelledby="storageTitle" hidden>
           <div class="settings-heading"><div><h2 id="storageTitle">虚拟机存储</h2><p>查看虚拟盘容量与它在本机磁盘上的实际占用。</p></div></div>
@@ -119,9 +119,9 @@
         <div class="settings-inner">
         <div class="heading"><div><div class="eyebrow"><span></span> LOCAL WORKSPACE</div><h1>工作区<span class="heading-period">.</span></h1><p>管理主机与虚拟环境共享的文件。</p></div></div>
         <div class="settings-card"><div class="settings-heading"><div><span class="section-kicker">02 / WORKSPACE</span><h2>共享目录</h2><p>选择一个文件夹，供虚拟环境访问。</p></div><div class="card-icon">▧</div></div>
-          <label for="workspacePath">工作区路径</label><div class="field-row"><input id="workspacePath" type="text" readonly placeholder="选择文件夹"><button id="chooseWorkspace" class="secondary-button" type="button">选择文件夹</button></div>
+          <label for="workspacePath">工作区路径</label><div class="field-row"><input id="workspacePath" type="text" readonly placeholder="选择文件夹"><button id="chooseWorkspace" class="secondary-button" type="button" disabled>选择文件夹</button></div>
+          <div class="auto-save-status"><span id="workspaceMessage" role="status">文件夹选定后自动保存。</span><button id="retryWorkspace" class="secondary-button" type="button" hidden>重试保存</button></div>
           <p class="field-help">支持双向文本复制；终端中使用 Ctrl+C / Ctrl+V。图片与文件请通过共享工作区传递。</p>
-          <div class="settings-footer"><span id="workspaceMessage" role="status">虚拟环境将能访问此文件夹中的内容。</span><button id="saveWorkspace" class="secondary-button" type="button">保存设置</button></div>
         </div>
         </div>
       </section>

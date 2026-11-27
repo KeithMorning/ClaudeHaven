@@ -40,6 +40,14 @@ main{min-height:0;overflow:hidden}
 .settings-card label{font-size:12px;margin-top:20px}
 .settings-card input,.settings-card select{font-size:13px}
 .settings-footer span,.safety-note p{font-size:12px}
+.auto-save-status{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin-top:9px;font-size:12px;line-height:1.6;color:var(--muted);overflow-wrap:anywhere}
+.auto-save-status [data-state="saved"]{color:#a6cbaa}
+.auto-save-status [data-state="saving"]{color:#dfb69f}
+.auto-save-status [data-state="error"]{color:#f2aa93}
+.auto-save-status .secondary-button{min-height:32px}
+.pending-settings,.auto-save-status [data-state="pending-restart"],.settings-footer [data-state="pending-restart"]{color:#dfb69f}
+.pending-settings{line-height:1.4;text-align:right}
+.pending-settings:empty{position:absolute;width:1px;height:1px;overflow:hidden}
 .storage-card{margin-top:16px}
 .storage-stats{display:flex;flex-wrap:wrap;gap:16px 32px;margin:0}
 .storage-stats dt{font-size:12px;color:var(--muted)}

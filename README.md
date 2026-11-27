@@ -48,15 +48,19 @@ Once the VPS is provisioned, find its public IP, SSH username, password or key, 
 
 Download the Windows x64 installer or the matching Intel or Apple Silicon Mac DMG from the [latest release](https://github.com/KeithMorning/ClaudeHaven/releases/latest). On Windows, run the installer. On Mac, open the DMG and drag Claude Haven into Applications.
 
-Open Claude Haven and go to **System Settings → Network**. Click **Choose file** to import your `.yaml` or `.yml` file, select the node you want to use, then click **Save settings**. If the node list is empty, check that your YAML lists nodes under the top-level `proxies` key.
+**Does macOS say Apple could not verify Claude Haven?** The current Mac builds have yet to be notarized by Apple. If you downloaded the DMG from the official GitHub release linked above, try opening Claude Haven from Applications once. After the alert appears, go to **System Settings → Privacy & Security**, scroll down, click **Open Anyway**, and confirm. This adds an exception for Claude Haven only. [Apple’s instructions](https://support.apple.com/en-us/102445)
+
+Open Claude Haven and go to **System Settings → Network**. Click **Choose file** and select your `.yaml` or `.yml` file. The app selects the first node by default and saves the file selection and node automatically. You can choose a different node from the list. If the node list is empty, check that your YAML lists nodes under the top-level `proxies` key.
 
 The configuration stays on your computer. At startup, Claude Haven checks the network guard and egress connection. The desktop will not be marked ready if these checks fail, so use a configuration with a working proxy node.
 
 ### 4. Choose a workspace
 
-Open **Workspace**, select a folder on your computer, and save it. The Linux desktop can read and write files in this folder. Only share folders you want the desktop to access.
+Open **Workspace** and select a folder on your computer. The selection is saved automatically. The Linux desktop can read and write files in this folder. Only share folders you want the desktop to access.
 
 ### 5. Start the desktop
+
+If the virtual environment is already running, stop and start it again to apply saved changes to the network configuration, workspace, language, or time zone.
 
 Return to **Desktop** and click **Start virtual environment**. On Windows, the app checks WSL2 on first launch and guides you through setup if required components are missing. On Mac, the Linux system is included with the app; you do not need to install Lima or Docker or download a separate system image. The first launch can take a little while. Keep the app open until startup finishes.
 
@@ -68,7 +72,7 @@ Once the desktop is ready, open **Claude Code** from the taskbar and follow the 
 - Chinese input is provided by fcitx5 / Rime. Text can be copied between the host and the desktop.
 - Access project files through the shared workspace. You can also use it to move images and other files between the host and desktop.
 - On Windows, WSL interoperability lets you invoke Windows-native commands from Linux when needed. This can reuse tools already installed on the host instead of installing a duplicate in Linux. Windows commands run as host processes, use Windows paths and permissions, and are outside the Linux network guard; Linux tools included with Claude Haven remain the ready-to-use default.
-- The app shows the network protection status. If a node or egress check fails, choose and save another node in **System Settings**, then retry from **Desktop**.
+- The app shows the network protection status. If a node or egress check fails, choose another node in **System Settings**, then retry from **Desktop**.
 
 ![Browser running in the Claude Haven desktop](assets/screenshots/claude-haven-browser.png)
 
@@ -90,7 +94,7 @@ The Linux image omits APT package lists to keep the download small. In its termi
 
 **The network guard check failed**
 
-Make sure the selected YAML has a working node that can reach the internet. Select and save a node again under **Network**. The environment will not be marked ready until the guard check passes.
+Make sure the selected YAML has a working node that can reach the internet. Select a node again under **Network**. The environment will not be marked ready until the guard check passes.
 
 **Want to check your Claude environment?**
 
