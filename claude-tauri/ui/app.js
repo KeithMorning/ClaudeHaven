@@ -771,6 +771,18 @@ async function loadConfig() {
   }
 }
 
+function showWindowsImageNotice(message) {
+  const note = $('windowsImageMessage');
+  note.textContent = message || '';
+  note.hidden = !message;
+  $('windowsImageWarning').hidden = !message;
+}
+
+$('windowsImageWarning').addEventListener('click', () => {
+  switchPage('system');
+  $('openReset').focus();
+});
+
 function connectDesktop() {
   sessionStarted = true;
   renderPendingSettings();
@@ -789,6 +801,11 @@ function connectDesktop() {
   invalidateCheck();
   $('backgroundCheck').hidden = false;
   const generation = statusGeneration;
+  if (latestRuntimePlatform === 'windows') {
+    void invoke('windows_image_notice').then((message) => {
+      if (sessionStarted && generation === statusGeneration) showWindowsImageNotice(message);
+    }).catch(() => {});
+  }
   void refreshGuard().then(() => {
     if (sessionStarted && generation === statusGeneration && lastGuardState === 'guarded') void runNetworkCheck();
   });
@@ -997,6 +1014,7 @@ $('stopRuntime').addEventListener('click', async () => {
   try {
     await invoke('stop_runtime');
     sessionStarted = false;
+    showWindowsImageNotice(null);
     activeRuntimeConfig = null;
     renderPendingSettings();
     autoStartDone = true;
@@ -1165,6 +1183,7 @@ $('confirmReset').addEventListener('click', async () => {
   try {
     await invoke('reset_system', { confirmation: 'RESET_CLAUDE_ENVIRONMENT' });
     sessionStarted = false;
+    showWindowsImageNotice(null);
     activeRuntimeConfig = null;
     renderPendingSettings();
     stoppedByUser = true;

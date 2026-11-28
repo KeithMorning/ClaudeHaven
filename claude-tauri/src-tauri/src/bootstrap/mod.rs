@@ -12,7 +12,8 @@ pub(crate) fn decode_windows_output(bytes: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::state::{
-        classify_exit, decode_windows_output, parse_distro_list, CommandKind, ExitDisposition,
+        classify_exit, decode_windows_output, parse_distro_list, wsl_list_reports_no_distributions,
+        CommandKind, ExitDisposition,
     };
 
     #[test]
@@ -28,6 +29,20 @@ mod tests {
         assert_eq!(distros.len(), 1);
         assert_eq!(distros[0].name, "claude-vm");
         assert_eq!(distros[0].wsl_version, Some(2));
+    }
+
+    #[test]
+    fn recognizes_localized_empty_distro_list_without_bom_or_error_code() {
+        let text = "适用于 Linux 的 Windows 子系统没有已安装的分发。\r\n\
+                    使用 'wsl.exe --list --online' 列出可用的分发\r\n\
+                    和 'wsl.exe --install <Distro>' 进行安装。\r\n";
+        let bytes: Vec<_> = text.encode_utf16().flat_map(u16::to_le_bytes).collect();
+        let decoded = decode_windows_output(&bytes);
+        assert_eq!(decoded, text);
+        assert_eq!(decode_windows_output(text.as_bytes()), text);
+        assert!(wsl_list_reports_no_distributions(&decoded));
+        assert!(wsl_list_reports_no_distributions("Wsl/WSL_E_DEFAULT_DISTRO_NOT_FOUND"));
+        assert!(!wsl_list_reports_no_distributions("Wsl/E_ACCESSDENIED"));
     }
 
     #[test]

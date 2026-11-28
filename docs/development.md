@@ -4,7 +4,7 @@
 
 ## Windows x64 开发
 
-需要 Windows x64、Node.js、Rust MSVC 工具链、C++ Build Tools、WebView2 和 WSL2。开发时需要 Linux 运行时镜像 `rootfs.tar.gz`；该文件不提交到 Git。
+需要 Windows x64、Node.js、Rust MSVC 工具链、C++ Build Tools、WebView2 和 WSL2。开发时需要用下方镜像构建脚本生成带版本标记的 `rootfs.tar.gz`。该文件不提交到 Git。
 
 ```powershell
 git clone https://github.com/KeithMorning/ClaudeVM.git

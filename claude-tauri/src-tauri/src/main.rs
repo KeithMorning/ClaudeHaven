@@ -533,6 +533,18 @@ async fn start_runtime(app: tauri::AppHandle) -> Result<LaunchOutcome, String> {
 }
 
 #[tauri::command]
+async fn windows_image_notice() -> Result<Option<String>, String> {
+    #[cfg(windows)]
+    {
+        tauri::async_runtime::spawn_blocking(runtime::windows_image_notice)
+            .await
+            .map_err(|e| e.to_string())?
+    }
+    #[cfg(not(windows))]
+    Ok(None)
+}
+
+#[tauri::command]
 async fn guard_status() -> Result<serde_json::Value, String> {
     #[cfg(windows)]
     {
@@ -564,6 +576,7 @@ async fn restore_session(app: tauri::AppHandle) -> Result<(), String> {
             if !runtime::guard_session_running()? {
                 return Err("虚拟环境未运行。".into());
             }
+            runtime::require_supported_windows_image()?;
             runtime::verify_existing_desktop()?;
             runtime::ensure_clipboard_bridge()?;
             runtime::ensure_guard_running(&resources)?;
@@ -689,13 +702,14 @@ async fn reset_system(_app: tauri::AppHandle, confirmation: String) -> Result<()
             runtime::shutdown(&mut runtime::WslStop)?;
             let registered = runtime::run_wsl(&["--list", "--quiet"])
                 .map_err(|e| format!("无法检查虚拟环境：{e}"))?;
+            let text = runtime::output_text(&registered);
             if !registered.status.success() {
-                return Err(format!(
-                    "无法检查虚拟环境：{}",
-                    runtime::output_text(&registered)
-                ));
+                if bootstrap::state::wsl_list_reports_no_distributions(&text) {
+                    return Ok(());
+                }
+                return Err(format!("无法检查虚拟环境：{text}"));
             }
-            if !runtime::output_text(&registered)
+            if !text
                 .lines()
                 .any(|line| line.trim().eq_ignore_ascii_case("claude-vm"))
             {
@@ -1002,6 +1016,7 @@ fn main() {
             restore_session,
             stop_runtime,
             reset_system,
+            windows_image_notice,
             guard_status,
             clipboard_read_text,
             clipboard_write_text

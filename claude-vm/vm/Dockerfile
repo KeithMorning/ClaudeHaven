@@ -53,11 +53,10 @@ RUN aria2c -x16 -s16 -k1M -q -d /tmp -o chrome.deb "https://dl.google.com/linux/
     && rm -f /tmp/chrome.deb \
     && rm -rf /var/lib/apt/lists/*
 
-# Claude Code CLI（官方包，走 npmmirror 镜像）
+# Claude Code CLI（从 npm 官方源读取发布版本）
 # 装完立刻清干净：npm 更新失败会留下 @anthropic-ai/.claude-code-XXXXXXXX 暂存目录，
 # node 头文件和 npm 缓存同样只在构建时有用。
-RUN npm config set registry https://registry.npmmirror.com \
-    && npm install -g @anthropic-ai/claude-code \
+RUN npm install -g --registry=https://registry.npmjs.org @anthropic-ai/claude-code@latest \
     && claude_bin="$(npm prefix -g)/bin/claude" \
     && if [ "$claude_bin" != /usr/local/bin/claude ]; then ln -sf "$claude_bin" /usr/local/bin/claude; fi \
     && claude --version \
@@ -100,6 +99,9 @@ COPY assets/wallpaper/claude-haven.png /opt/wall/source.png
 COPY config/themes/Claude /usr/share/themes/Claude
 RUN chmod +x /opt/scripts/*.sh \
     && cp /opt/config/apps/*.desktop /usr/share/applications/ 2>/dev/null || true
+
+ARG HAVEN_IMAGE_VERSION=unversioned
+RUN printf '%s\n' "$HAVEN_IMAGE_VERSION" > /etc/claude-haven-image-version
 
 # 默认区域（运行时可被 -e / wsl env 覆盖）
 ENV TZ=America/New_York

@@ -1,6 +1,6 @@
 use super::state::WslDistro;
 #[cfg(windows)]
-use super::state::{decode_windows_output, parse_distro_list};
+use super::state::{decode_windows_output, parse_distro_list, wsl_list_reports_no_distributions};
 use serde::{Deserialize, Serialize};
 #[cfg(windows)]
 use std::process::Command;
@@ -174,10 +174,8 @@ pub fn probe_host() -> Result<HostProbe, String> {
             None,
         ),
         Ok(output) => {
-            let text =
-                decode_windows_output(&output.stdout) + &decode_windows_output(&output.stderr);
-            let error =
-                (!text.contains("WSL_E_DEFAULT_DISTRO_NOT_FOUND")).then(|| text.trim().to_owned());
+            let text = crate::runtime::output_text(&output);
+            let error = (!wsl_list_reports_no_distributions(&text)).then_some(text);
             (Vec::new(), error)
         }
         Err(error) => (Vec::new(), Some(error)),

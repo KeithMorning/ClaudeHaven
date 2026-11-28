@@ -1,5 +1,7 @@
 //! Windows WSL integration. This module intentionally contains no UI logic.
 
+#[cfg(windows)]
+use crate::bootstrap::state::wsl_list_reports_no_distributions;
 use base64::{engine::general_purpose::STANDARD, Engine};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
@@ -261,10 +263,15 @@ fn run_wsl_bounded(args: &[&str], limit: std::time::Duration) -> Result<std::pro
 #[cfg(windows)]
 pub(crate) fn guard_session_running() -> Result<bool, String> {
     let running = run_wsl_bounded(&["--list", "--running", "--quiet"], std::time::Duration::from_secs(4))?;
+    let text = output_text(&running);
     if !running.status.success() {
-        return Err("无法确认虚拟环境是否仍在运行。".into());
+        return if wsl_list_reports_no_distributions(&text) {
+            Ok(false)
+        } else {
+            Err("无法确认虚拟环境是否仍在运行。".into())
+        };
     }
-    Ok(crate::bootstrap::decode_windows_output(&running.stdout)
+    Ok(text
         .lines()
         .any(|line| line.trim().eq_ignore_ascii_case("claude-vm")))
 }
@@ -275,13 +282,51 @@ fn wsl_exe_path() -> PathBuf {
     PathBuf::from(system_root).join("System32").join("wsl.exe")
 }
 
+#[cfg(windows)]
+fn windows_image_version() -> Result<Option<String>, String> {
+    let result = run_wsl_bounded(
+        &[
+            "-d", "claude-vm", "-u", "root", "--exec", "/bin/sh", "-c",
+            "if [ -r /etc/claude-haven-image-version ]; then cat /etc/claude-haven-image-version; fi",
+        ],
+        std::time::Duration::from_secs(4),
+    )?;
+    if !result.status.success() {
+        return Err(wsl2_probe_error("无法读取虚拟环境镜像版本", &result));
+    }
+    let version = crate::bootstrap::decode_windows_output(&result.stdout);
+    let version = version.trim();
+    Ok((!version.is_empty() && version != "unversioned").then(|| version.to_owned()))
+}
+
+#[cfg(windows)]
+pub(crate) fn require_supported_windows_image() -> Result<(), String> {
+    if windows_image_version()?.is_none() {
+        return Err("当前 WSL 系统盘来自旧版，与此版本不兼容。请先备份虚拟机内的文件，再到「系统设置 → 重置系统」，然后重新启动以导入新版镜像。".into());
+    }
+    Ok(())
+}
+
+#[cfg(windows)]
+pub(crate) fn windows_image_notice() -> Result<Option<String>, String> {
+    if !guard_session_running()? {
+        return Ok(None);
+    }
+    let expected = env!("CARGO_PKG_VERSION");
+    Ok(windows_image_version()?.filter(|version| version != expected).map(|version| {
+        format!("当前 WSL 环境来自 {version} 镜像，本安装包版本为 {expected}。")
+    }))
+}
+
 #[cfg(any(windows, target_os = "macos"))]
 pub(crate) fn output_text(output: &std::process::Output) -> String {
-    let mut bytes = output.stdout.clone();
-    bytes.extend_from_slice(&output.stderr);
-    crate::bootstrap::decode_windows_output(&bytes)
-        .trim()
-        .to_owned()
+    let stdout = crate::bootstrap::decode_windows_output(&output.stdout);
+    let stderr = crate::bootstrap::decode_windows_output(&output.stderr);
+    [stdout.trim(), stderr.trim()]
+        .into_iter()
+        .filter(|text| !text.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 #[cfg(windows)]
@@ -657,12 +702,11 @@ impl LaunchOperations for WslLaunch {
 
     fn ensure_stopped_and_port_free(&mut self) -> Result<(), String> {
         let running = run_wsl(&["--list", "--running", "--quiet"])?;
-        if !running.status.success()
-            && !output_text(&running).contains("WSL_E_DEFAULT_DISTRO_NOT_FOUND")
-        {
+        let text = output_text(&running);
+        if !running.status.success() && !wsl_list_reports_no_distributions(&text) {
             return Err("无法确认已有 WSL 会话状态，已中止启动。".into());
         }
-        if output_text(&running)
+        if text
             .lines()
             .any(|s| s.trim().eq_ignore_ascii_case("claude-vm"))
         {
@@ -682,7 +726,14 @@ impl LaunchOperations for WslLaunch {
 
     fn ensure_runtime(&mut self) -> Result<(), String> {
         let list = run_wsl(&["--list", "--verbose"])?;
-        let distros = crate::bootstrap::state::parse_distro_list(&output_text(&list));
+        let text = output_text(&list);
+        let distros = if list.status.success() {
+            crate::bootstrap::state::parse_distro_list(&text)
+        } else if wsl_list_reports_no_distributions(&text) {
+            Vec::new()
+        } else {
+            return Err(wsl2_probe_error("无法确认 WSL 发行版状态", &list));
+        };
         if let Some(distro) = distros
             .iter()
             .find(|distro| distro.name.eq_ignore_ascii_case("claude-vm"))
@@ -691,17 +742,13 @@ impl LaunchOperations for WslLaunch {
                 Some(2) => {
                     let probe = run_wsl(&["-d", "claude-vm", "--exec", "/bin/true"])?;
                     if probe.status.success() {
-                        return Ok(());
+                        return require_supported_windows_image();
                     }
                     return Err(wsl2_probe_error("claude-vm 已注册为 WSL 2，但最小启动探针失败", &probe));
                 }
                 Some(1) => return Err("claude-vm 已注册为 WSL 1。为保护其中数据，Claude Haven 不会自动转换或覆盖；请先备份后修复运行时。".into()),
                 _ => return Err("无法确认 claude-vm 的 WSL 架构版本；未修改现有发行版。".into()),
             }
-        }
-        if !list.status.success() && !output_text(&list).contains("WSL_E_DEFAULT_DISTRO_NOT_FOUND")
-        {
-            return Err("无法确认 WSL 发行版状态，请检查 WSL2。".into());
         }
         std::fs::create_dir_all(&self.data_dir).map_err(|e| format!("无法创建运行时目录：{e}"))?;
         let dir = self.data_dir.to_str().ok_or("运行时目录无效。")?;
@@ -711,6 +758,9 @@ impl LaunchOperations for WslLaunch {
         if imported.status.success() {
             let probe = run_wsl(&["-d", "claude-vm", "--exec", "/bin/true"])?;
             if probe.status.success() {
+                if windows_image_version()?.is_none() {
+                    return Err("安装包内的 Windows 镜像缺少版本标记。请安装包含新版镜像的安装包，再重置系统并重新启动。".into());
+                }
                 Ok(())
             } else {
                 Err(wsl2_probe_error(
@@ -812,7 +862,7 @@ impl StopOperations for WslStop {
     fn is_running(&mut self) -> Result<bool, String> {
         let running = run_wsl(&["--list", "--running", "--quiet"])?;
         if !running.status.success() {
-            if output_text(&running).contains("WSL_E_DEFAULT_DISTRO_NOT_FOUND") {
+            if wsl_list_reports_no_distributions(&output_text(&running)) {
                 return Ok(false);
             }
             return Err("无法确认虚拟环境状态，未执行停止。".into());

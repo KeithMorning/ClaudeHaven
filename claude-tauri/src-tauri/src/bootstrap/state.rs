@@ -34,12 +34,21 @@ pub fn decode_windows_output(bytes: &[u8]) -> String {
         (Some(false), rest)
     } else if let Some(rest) = bytes.strip_prefix(&[0xfe, 0xff]) {
         (Some(true), rest)
-    } else if bytes.len() >= 4 && bytes[1] == 0 && bytes[3] == 0 {
-        (Some(false), bytes)
-    } else if bytes.len() >= 4 && bytes[0] == 0 && bytes[2] == 0 {
-        (Some(true), bytes)
     } else {
-        (None, bytes)
+        // Localized WSL output can start with several non-ASCII UTF-16 units.
+        // Look for the zero-byte alignment across the output, including CRLF.
+        let zero_low = bytes.chunks_exact(2).filter(|pair| pair[0] == 0).count();
+        let zero_high = bytes.chunks_exact(2).filter(|pair| pair[1] == 0).count();
+        let encoding = if bytes.len() % 2 != 0 {
+            None
+        } else if zero_high >= zero_low + 2 {
+            Some(false)
+        } else if zero_low >= zero_high + 2 {
+            Some(true)
+        } else {
+            None
+        };
+        (encoding, bytes)
     };
 
     let mut text = if let Some(big_endian) = encoding {
@@ -61,6 +70,14 @@ pub fn decode_windows_output(bytes: &[u8]) -> String {
         text.pop();
     }
     text
+}
+
+pub fn wsl_list_reports_no_distributions(text: &str) -> bool {
+    let text = text.to_ascii_lowercase();
+    // Some versions print only Microsoft's localized MessageNoDefaultDistro.
+    // Its two command examples are kept verbatim across locales.
+    text.contains("wsl_e_default_distro_not_found")
+        || (text.contains("wsl.exe --list --online") && text.contains("wsl.exe --install <distro>"))
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]

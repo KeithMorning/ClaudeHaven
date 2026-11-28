@@ -84,6 +84,10 @@ Once the desktop is ready, open **Claude Code** from the taskbar and follow the 
 
 Follow the in-app steps to configure WSL2. If Windows asks you to restart, restart the computer and reopen Claude Haven to continue.
 
+**The Windows desktop still looks old after an upgrade**
+
+An upgrade keeps the existing WSL system disk. The app now requires an image version marker, so system disks created by earlier releases need to be rebuilt. Back up any virtual machine files you want to keep, then go to **System Settings → Reset system**. The next start imports the bundled image. Resetting clears files, sign-in state and software inside the virtual machine. The shared host workspace is kept.
+
 **The first launch is taking a while**
 
 The app initializes the virtual desktop and network protection on first launch. Wait for the progress indicator to finish. If startup fails, check the displayed error and your settings, then try again.

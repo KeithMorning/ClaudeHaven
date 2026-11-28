@@ -42,6 +42,7 @@
               <span class="guard-lock" aria-hidden="true"></span>
               <span id="desktopStatus" role="status">网络保护未启用</span>
               <span class="footer-latency" id="liveLatency" hidden></span>
+              <button class="text-button timezone-warning" id="windowsImageWarning" type="button" hidden>检查镜像版本 ↗</button>
               <button class="text-button timezone-warning" id="timezoneWarning" type="button" hidden></button>
             </div>
             <div class="footer-check">
@@ -109,7 +110,8 @@
           <div class="settings-footer"><span id="hostToolsMessage" role="status"></span><button id="toggleHostTools" class="secondary-button" type="button" disabled>启用</button></div>
         </section>
         <section class="settings-card reset-card" aria-labelledby="resetTitle">
-          <div class="settings-heading"><div><span class="section-kicker">02 / ENVIRONMENT</span><h2 id="resetTitle">重置系统</h2><p>删除当前 Linux 虚拟环境，之后可重新启动一个干净环境。</p></div><div class="card-icon reset-icon" aria-hidden="true">↺</div></div>
+          <div class="settings-heading"><div><span class="section-kicker">02 / ENVIRONMENT</span><h2 id="resetTitle">重置系统</h2><p>删除当前 Linux 虚拟环境。下次启动会从当前安装包创建干净的环境。</p></div><div class="card-icon reset-icon" aria-hidden="true">↺</div></div>
+          <p class="field-help" id="windowsImageMessage" role="status" hidden></p>
           <div class="reset-warning"><strong>此操作会删除虚拟环境中的所有数据</strong><p>包括 Claude 登录状态、虚拟环境内的文件和已安装内容。宿主共享工作区及本应用保存的网络配置会保留。</p></div>
           <div class="settings-footer"><span id="resetMessage" role="status">重置后需要重新启动环境并登录 Claude。</span><button id="openReset" class="danger-button" type="button">重置系统</button></div>
         </section>

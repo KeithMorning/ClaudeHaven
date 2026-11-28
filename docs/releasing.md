@@ -10,6 +10,8 @@ GitHub Actions 在云端分别构建 Windows x64 安装包、Apple Silicon Mac D
 
 也可以在代码已更新版本号后直接推送标签。推送 `v*` 标签会自动启动同一套构建和发布流程。
 
+如果只需更新已发布版本的 Windows 安装包，请在 `main` 上手动运行工作流，填写现有标签并勾选 `windows_only`。工作流从所选分支构建 Windows 安装包，并替换该 Release 的 Windows 资产。
+
 ## 构建结果
 
 - Windows x64 NSIS 安装包，文件名类似 `Claude Haven_0.1.5_x64-setup.exe`。

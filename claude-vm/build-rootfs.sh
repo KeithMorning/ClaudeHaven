@@ -6,6 +6,11 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CTX="${1:-$HERE/vm}"
 PLATFORM="${3:-linux/amd64}"
+IMAGE_VERSION=$(sed -nE 's/^[[:space:]]*"version"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p' "$HERE/../claude-tauri/package.json")
+if [[ ! "$IMAGE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.+-]+)?$ ]]; then
+  echo "无法读取 Claude Haven 镜像版本。" >&2
+  exit 1
+fi
 case "$PLATFORM" in
   linux/amd64)
     OUT="${2:-$HERE/../claude-tauri/runtime/rootfs.tar.gz}"
@@ -24,9 +29,9 @@ fi
 
 echo "[1/4] 构建 $PLATFORM 镜像 $IMG (上下文: $CTX)"
 if [ "$PLATFORM" = linux/amd64 ] && ! docker buildx version >/dev/null 2>&1; then
-  DOCKER_BUILDKIT=0 docker build --platform "$PLATFORM" --build-arg TARGETARCH=amd64 -t "$IMG" "$CTX"
+  DOCKER_BUILDKIT=0 docker build --platform "$PLATFORM" --build-arg TARGETARCH=amd64 --build-arg HAVEN_IMAGE_VERSION="$IMAGE_VERSION" -t "$IMG" "$CTX"
 else
-  docker buildx build --platform "$PLATFORM" --load -t "$IMG" "$CTX"
+  docker buildx build --platform "$PLATFORM" --build-arg HAVEN_IMAGE_VERSION="$IMAGE_VERSION" --load -t "$IMG" "$CTX"
 fi
 ACTUAL=$(docker image inspect --format '{{.Os}}/{{.Architecture}}' "$IMG")
 if [ "$ACTUAL" != "$PLATFORM" ]; then
