@@ -15,6 +15,7 @@ let nodeConfigIssue = '';
 const configComplete = () => Boolean(!nodeConfigIssue && config.yaml_path && config.node && config.workspace);
 let bootstrapState = null;
 let latestRuntimePlatform = null;
+let latestBuildRevision = null;
 let bootstrapBusy = false;
 let latestHostProbe = null;
 let lastBootstrapTask = null;
@@ -55,6 +56,7 @@ function renderBootstrap(snapshot, hostProbe = latestHostProbe) {
   $('bootstrapDiagnostics').hidden = !snapshot?.error;
   $('bootstrapDiagnosticText').textContent = snapshot?.error ? JSON.stringify({
     diagnostic_id: snapshot.error.diagnostic_id,
+    build_revision: latestBuildRevision ?? undefined,
     code: snapshot.error.code,
     phase: snapshot.error.phase,
     raw_exit_code: snapshot.error.raw_exit_code,
@@ -912,6 +914,7 @@ async function refreshStatus(manual = false) {
     const boot = await invoke('bootstrap_snapshot');
     await settingsWrite;
     latestRuntimePlatform = status.platform;
+    latestBuildRevision = status.build_revision ?? null;
     const isMac = status.platform === 'macos';
     const backendName = isMac ? 'Apple 虚拟化' : 'WSL';
     latestHostProbe = status.host_probe || null;

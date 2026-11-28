@@ -743,6 +743,8 @@ async fn reset_system(_app: tauri::AppHandle, confirmation: String) -> Result<()
 #[derive(Serialize)]
 struct RuntimeStatus {
     platform: &'static str,
+    #[cfg(windows)]
+    build_revision: Option<&'static str>,
     wsl_available: bool,
     distro_registered: bool,
     session_running: bool,
@@ -836,6 +838,7 @@ async fn runtime_status(app: tauri::AppHandle) -> RuntimeStatus {
     {
         let previous_bootstrap = bootstrap::controller::snapshot(&app);
         let cached_registered = if !previous_bootstrap.reboot_required
+            && !previous_bootstrap.has_failed_runtime_probe()
             && wsl_ready_marker(&app).is_some_and(|p| p.is_file()) {
             runtime::run_wsl(&["--list", "--quiet"]).ok().filter(|o| o.status.success())
                 .map(|o| runtime::output_text(&o).lines().any(|line| line.trim().eq_ignore_ascii_case("claude-vm")))
@@ -844,6 +847,9 @@ async fn runtime_status(app: tauri::AppHandle) -> RuntimeStatus {
         let host = if cached_registered { None } else { bootstrap::probe::probe_host().ok() };
         if let Some(probe) = host.as_ref() {
             let _ = bootstrap::controller::resume_after_reboot(&app, probe);
+            if previous_bootstrap.has_failed_runtime_probe() && probe.can_initialize() {
+                let _ = bootstrap::controller::clear_resolved_runtime_probe(&app, &previous_bootstrap);
+            }
         }
         let registered = cached_registered || host
             .as_ref()
@@ -869,6 +875,7 @@ async fn runtime_status(app: tauri::AppHandle) -> RuntimeStatus {
         });
         RuntimeStatus {
             platform: std::env::consts::OS,
+            build_revision: option_env!("HAVEN_BUILD_REVISION"),
             wsl_available: status,
             distro_registered: registered,
             session_running,

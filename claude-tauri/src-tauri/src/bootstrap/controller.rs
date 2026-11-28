@@ -84,6 +84,21 @@ pub fn lock_for_runtime(app: &AppHandle) -> Result<BootstrapLock, String> {
     Ok(lock)
 }
 
+#[cfg(windows)]
+pub fn clear_resolved_runtime_probe(app: &AppHandle, previous: &BootstrapSnapshot) -> Result<(), String> {
+    let _lock = BootstrapLock::acquire()?;
+    let path = state_path(app)?;
+    let mut snapshot = store::load(&path)?;
+    if snapshot.has_failed_runtime_probe()
+        && snapshot.task_id == previous.task_id
+        && snapshot.sequence == previous.sequence
+    {
+        snapshot.error = None;
+        emit_snapshot(app, &path, &mut snapshot, BootstrapPhase::AlreadyReady)?;
+    }
+    Ok(())
+}
+
 pub fn resume_after_reboot(app: &AppHandle, host: &HostProbe) -> Result<(), String> {
     let path = state_path(app)?;
     let mut snapshot = store::load(&path)?;

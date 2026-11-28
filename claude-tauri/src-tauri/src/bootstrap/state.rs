@@ -211,6 +211,17 @@ pub struct BootstrapSnapshot {
     pub error: Option<BootstrapError>,
 }
 
+#[cfg(windows)]
+impl BootstrapSnapshot {
+    pub fn has_failed_runtime_probe(&self) -> bool {
+        self.phase == BootstrapPhase::Failed
+            && !self.reboot_required
+            && self.error.as_ref().is_some_and(|error| {
+                error.code == BootstrapErrorCode::RuntimeProbeFailed
+            })
+    }
+}
+
 impl Default for BootstrapSnapshot {
     fn default() -> Self {
         Self {

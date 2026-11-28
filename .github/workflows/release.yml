@@ -62,6 +62,8 @@ jobs:
       - name: Build NSIS installer
         run: npm.cmd run build
         working-directory: claude-tauri
+        env:
+          HAVEN_BUILD_REVISION: ${{ github.sha }}
       - uses: actions/upload-artifact@v4
         with:
           name: windows-installer
